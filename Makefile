@@ -110,6 +110,13 @@ export cflags-y
 include scripts/Makefile.version
 include scripts/Makefile.rules
 
+include scripts/utilities.mak
+include scripts/feature-tests.mak
+
+ifeq ($(call try-build,$(PRLIMIT_TEST),,),y)
+	CFLAGS	+= -DCONFIG_HAS_PRLIMIT
+endif
+
 .SUFFIXES:
 
 #
