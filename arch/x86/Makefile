@@ -7,6 +7,7 @@ syscalls-asm-y	+= $(SYS-ASM:.S=).o
 crtools-obj-y	+= crtools.o
 crtools-obj-y	+= cpu.o
 crtools-obj-y	+= vdso.o
+crtools-obj-y	+= prlimit.o
 
 SYS-DEF		:= syscall-x86-64.def
 SYS-ASM-COMMON	:= syscall-common-x86-64.S
