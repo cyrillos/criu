@@ -1,9 +1,13 @@
 #ifndef __CPT2_CONTEXT_H__
 #define __CPT2_CONTEXT_H__
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <unistd.h>
+
+#include <sys/types.h>
+#include <sys/mount.h>
+#include <sys/stat.h>
+
+#include <limits.h>
 
 #include "cpt-image.h"
 #include "fdset.h"
@@ -13,6 +17,12 @@ typedef struct context {
 	int			fd;		/* dumpfile */
 	int			dfd;		/* output dir */
 	struct stat		st;		/* stat on @fd */
+
+	int			rootfd;		/* where container's root fs lives */
+	struct stat		stroot;
+
+	char			root[PATH_MAX];
+	size_t			root_len;
 
 	struct cpt_major_hdr	h;
 	struct cpt_major_tail	t;

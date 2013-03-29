@@ -7,6 +7,7 @@
 
 #include "compiler.h"
 #include "cpt-image.h"
+#include "fsnotify.h"
 #include "context.h"
 #include "xmalloc.h"
 #include "files.h"
@@ -252,6 +253,7 @@ void read_fini(context_t *ctx)
 	free_tasks(ctx);
 	free_mm(ctx);
 	free_netdev(ctx);
+	free_inotify(ctx);
 }
 
 int read_dumpfile(context_t *ctx)
@@ -278,6 +280,9 @@ int read_dumpfile(context_t *ctx)
 		return -1;
 
 	if (read_files(ctx))
+		return -1;
+
+	if (read_inotify(ctx))
 		return -1;
 
 	if (read_ttys(ctx))

@@ -8,6 +8,7 @@
 typedef struct {
 	char		*cpt_filename;
 	char		*criu_dirname;
+	char		*root_dirname;
 	unsigned int	loglevel;
 } opts_t;
 

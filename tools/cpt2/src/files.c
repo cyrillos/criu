@@ -8,6 +8,7 @@
 #include <linux/major.h>
 
 #include "cpt-image.h"
+#include "fsnotify.h"
 #include "magicfs.h"
 #include "xmalloc.h"
 #include "files.h"
@@ -54,6 +55,15 @@ static int type_from_name(FdinfoEntry *e, struct file_struct *file)
 static int set_fdinfo_type(FdinfoEntry *e, struct file_struct *file,
 			   struct cpt_inode_image *inode)
 {
+
+	/*
+	 * Notifiers requires own lookup :(
+	 */
+	if (inotify_lookup_file(obj_pos_of(file))) {
+		e->type = FD_TYPES__INOTIFY;
+		return 0;
+	}
+
 	if (S_ISSOCK(file->fi.cpt_i_mode)) {
 		struct sock_struct *sk;
 
@@ -286,6 +296,9 @@ int write_task_files(context_t *ctx, struct task_struct *t)
 			break;
 		case FD_TYPES__UNIXSK:
 			ret = write_socket(ctx, file);
+			break;
+		case FD_TYPES__INOTIFY:
+			ret = write_inotify(ctx, file);
 			break;
 		default:
 			pr_err("Unsupported file found (type = %d)\n", e.type);

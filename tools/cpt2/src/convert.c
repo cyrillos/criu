@@ -8,6 +8,8 @@
 #include "protobuf.h"
 #include "context.h"
 #include "convert.h"
+#include "xmalloc.h"
+#include "string.h"
 #include "image.h"
 #include "read.h"
 #include "task.h"
@@ -85,8 +87,6 @@ static int write_stubs(context_t *ctx)
 	gen_stub(EVENTPOLL);
 	gen_stub(EVENTPOLL_TFD);
 	gen_stub(SIGNALFD);
-	gen_stub(INOTIFY);
-	gen_stub(INOTIFY_WD);
 	gen_stub(FANOTIFY);
 	gen_stub(FANOTIFY_MARK);
 	gen_stub(PIPES_DATA);
@@ -124,6 +124,22 @@ int convert(void)
 			  global_opts.cpt_filename);
 		goto out;
 	}
+
+	ctx.rootfd = open(global_opts.root_dirname, O_RDONLY);
+	if (ctx.rootfd < 0) {
+		pr_perror("Can't open container root %s\n",
+			  global_opts.root_dirname);
+		goto out;
+	}
+
+	if (fstat(ctx.rootfd, &ctx.stroot)) {
+		pr_perror("Can't obtaine statistics on container root %s\n",
+			  global_opts.root_dirname);
+		goto out;
+
+	}
+
+	ctx.root_len = strlcpy(ctx.root, global_opts.root_dirname, sizeof(ctx.root));
 
 	ret = context_init_fdset_glob(&ctx);
 	if (ret)

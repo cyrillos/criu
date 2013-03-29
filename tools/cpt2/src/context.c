@@ -43,12 +43,13 @@ void context_fini_fdset_glob(context_t *ctx)
 void context_init(context_t *ctx)
 {
 	memzero(ctx, sizeof(*ctx));
-	ctx->fd = ctx->dfd = -1;
+	ctx->fd = ctx->dfd = ctx->rootfd = -1;
 }
 
 void context_fini(context_t *ctx)
 {
 	close_safe(&ctx->fd);
 	close_safe(&ctx->dfd);
+	close_safe(&ctx->rootfd);
 	context_fini_fdset_glob(ctx);
 }

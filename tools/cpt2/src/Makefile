@@ -14,6 +14,7 @@ obj-y	+= net.o
 obj-y	+= files.o
 obj-y	+= mm.o
 obj-y	+= tty.o
+obj-y	+= fsnotify.o
 
 cflags-y += -iquote include
 

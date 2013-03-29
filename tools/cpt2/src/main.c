@@ -26,9 +26,10 @@ int main(int argc, char *argv[])
 {
 	int opt, idx;
 
-	const char short_opts[] = "f:D:v";
+	const char short_opts[] = "f:D:r:v";
 	static struct option long_opts[] = {
 		{ "dumpfile",		required_argument, 0, 'f' },
+		{ "root",		required_argument, 0, 'r' },
 		{ "images-dir",		required_argument, 0, 'D' },
 		{ },
 	};
@@ -44,6 +45,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'D':
 			global_opts.criu_dirname = optarg;
+			break;
+		case 'r':
+			global_opts.root_dirname = optarg;
 			break;
 		case 'v':
 			if (optind < argc) {
@@ -65,6 +69,9 @@ int main(int argc, char *argv[])
 				   (unsigned int)DEFAULT_LOGLEVEL);
 
 	if (!global_opts.cpt_filename)
+		goto usage;
+
+	if (!global_opts.root_dirname)
 		goto usage;
 
 	if (!global_opts.criu_dirname)
