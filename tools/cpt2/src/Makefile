@@ -6,6 +6,7 @@ obj-y	+= string.o
 obj-y	+= context.o
 obj-y	+= image.o
 obj-y	+= protobuf.o
+obj-y	+= obj.o
 
 cflags-y += -iquote include
 
