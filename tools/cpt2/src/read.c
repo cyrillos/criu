@@ -13,6 +13,7 @@
 #include "log.h"
 #include "obj.h"
 #include "io.h"
+#include "ns.h"
 
 void get_section_bounds(context_t *ctx, int type, off_t *start, off_t *end)
 {
@@ -237,6 +238,7 @@ static int read_headers(context_t *ctx)
 
 void read_fini(context_t *ctx)
 {
+	free_ns(ctx);
 }
 
 int read_dumpfile(context_t *ctx)
@@ -245,6 +247,9 @@ int read_dumpfile(context_t *ctx)
 		return -1;
 
 	if (parse_sections(ctx))
+		return -1;
+
+	if (read_ns(ctx))
 		return -1;
 
 	return 0;

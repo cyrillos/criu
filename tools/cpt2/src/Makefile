@@ -8,6 +8,7 @@ obj-y	+= image.o
 obj-y	+= protobuf.o
 obj-y	+= obj.o
 obj-y	+= read.o
+obj-y	+= ns.o
 
 cflags-y += -iquote include
 
