@@ -15,6 +15,7 @@
 #include "log.h"
 #include "obj.h"
 #include "bug.h"
+#include "ns.h"
 
 #include "protobuf.h"
 #include "../../../protobuf/pstree.pb-c.h"
@@ -52,6 +53,13 @@ static int __write_task_images(context_t *ctx, struct task_struct *t)
 	ret = write_task_fs(ctx, t);
 	if (ret) {
 		pr_err("Failed writing fs for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_mountpoints(ctx, t);
+	if (ret) {
+		pr_err("Failed writing mountpoints for task %d\n",
 		       t->ti.cpt_pid);
 		goto out;
 	}

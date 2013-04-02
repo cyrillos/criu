@@ -11,11 +11,14 @@
 #include "image.h"
 #include "list.h"
 #include "read.h"
+#include "task.h"
 #include "obj.h"
 #include "ns.h"
 
 #include "protobuf.h"
 #include "../../../protobuf/mnt.pb-c.h"
+
+struct ns_struct *root_ns;
 
 void free_ns(context_t *ctx)
 {
@@ -69,6 +72,53 @@ static int setfstype(MntEntry *e, struct vfsmnt_struct *v)
 	}
 
 	return -1;
+}
+
+int write_task_mountpoints(context_t *ctx, struct task_struct *t)
+{
+	struct vfsmnt_struct *v;
+	struct ns_struct *ns;
+	MntEntry e;
+
+	int ret = 0;
+	int fd = -1;
+
+	fd = open_image(ctx, CR_FD_MOUNTPOINTS, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		return -1;
+
+	ns = obj_lookup_to(CPT_OBJ_NAMESPACE, t->ti.cpt_namespace);
+	if (!ns) {
+		pr_err("Can't find namespace at @%li\n",
+		       (long)t->ti.cpt_namespace);
+		return -1;
+	}
+
+	list_for_each_entry(v, &ns->list, list) {
+		mnt_entry__init(&e);
+
+		if (setfstype(&e, v)) {
+			pr_err("Can't encode fs type %s\n", v->mnt_type);
+			goto out;
+		}
+
+		e.mnt_id		= obj_id_of(v);
+		e.root_dev		= v->s_dev;
+		e.parent_mnt_id		= (v == ns->root) ? 1 : obj_id_of(ns->root);
+		e.flags			= v->vfsmnt.cpt_flags;
+		e.root			= "/";
+		e.mountpoint		= v->mnt_point;
+		e.source		= v->mnt_dev;
+		e.options		= NULL;
+
+		ret = pb_write_one(fd, &e, PB_MOUNTPOINTS);
+		if (ret)
+			goto out;
+	}
+
+out:
+	close_safe(&fd);
+	return ret;
 }
 
 int read_ns(context_t *ctx)
@@ -159,8 +209,10 @@ int read_ns(context_t *ctx)
 
 		show_vfsmnt_cont(ctx, v);
 
-		if (v->mnt_point[0] == '/' && v->mnt_point[1] == '\0')
+		if (v->mnt_point[0] == '/' && v->mnt_point[1] == '\0') {
+			root_ns = ns;
 			ns->root = v;
+		}
 	}
 	ret = 0;
 

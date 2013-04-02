@@ -8,6 +8,8 @@
 #include "compiler.h"
 #include "context.h"
 
+struct task_struct;
+
 struct vfsmnt_struct {
 	struct list_head		list;
 
@@ -28,7 +30,10 @@ struct ns_struct {
 	struct cpt_object_hdr		nsi;
 };
 
+extern struct ns_struct *root_ns;
+
 extern int read_ns(context_t *ctx);
+extern int write_task_mountpoints(context_t *ctx, struct task_struct *t);
 extern void free_ns(context_t *ctx);
 
 #endif /* __CPT2_NS_H__ */
