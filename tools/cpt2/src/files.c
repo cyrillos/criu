@@ -8,11 +8,239 @@
 #include <linux/major.h>
 
 #include "cpt-image.h"
+#include "magicfs.h"
 #include "xmalloc.h"
 #include "files.h"
+#include "image.h"
+#include "task.h"
 #include "read.h"
 #include "log.h"
+#include "net.h"
 #include "obj.h"
+#include "bug.h"
+
+#include "protobuf.h"
+#include "../../../protobuf/fdinfo.pb-c.h"
+#include "../../../protobuf/regfile.pb-c.h"
+#include "../../../protobuf/fs.pb-c.h"
+
+static int type_from_name(FdinfoEntry *e, struct file_struct *file)
+{
+	if (!file->name)
+		return -1;
+
+	if (strcmp(file->name, "inotify") == 0) {
+		e->type = FD_TYPES__INOTIFY;
+		return 0;
+	} else if (strcmp(file->name, "[fanotify]") == 0) {
+		e->type = FD_TYPES__FANOTIFY;
+		return 0;
+	} else if (strcmp(file->name, "[eventpoll]") == 0) {
+		e->type = FD_TYPES__EVENTPOLL;
+		return 0;
+	} else if (strcmp(file->name, "[eventfd]") == 0) {
+		e->type = FD_TYPES__EVENTFD;
+		return 0;
+	} else if (strcmp(file->name, "[signalfd]") == 0) {
+		e->type = FD_TYPES__SIGNALFD;
+		return 0;
+	}
+
+	return -1;
+}
+
+static int set_fdinfo_type(FdinfoEntry *e, struct file_struct *file,
+			   struct cpt_inode_image *inode)
+{
+	if (S_ISSOCK(file->fi.cpt_i_mode)) {
+		struct sock_struct *sk;
+
+		sk = sk_lookup_file(obj_of(file)->o_pos);
+		if (!sk) {
+			pr_err("Can't find socket for @%li\n",
+			       (long)obj_of(file)->o_pos);
+			return -1;
+		}
+		switch (sk->si.cpt_family) {
+		case PF_INET:
+		case PF_INET6:
+			e->type = FD_TYPES__INETSK;
+			break;
+		case PF_UNIX:
+			e->type = FD_TYPES__UNIXSK;
+			break;
+		case PF_PACKET:
+			e->type = FD_TYPES__PACKETSK;
+			break;
+		default:
+			pr_err("File at @%li with unsupported sock family %d\n",
+			       (long)obj_of(file)->o_pos, (int)sk->si.cpt_family);
+			return -1;
+		}
+	} else if (S_ISCHR(file->fi.cpt_i_mode)) {
+		if (!inode) {
+			pr_err("Character file without inode at @%li\n",
+			       (long)obj_of(file)->o_pos);
+			return -1;
+		}
+		switch (kdev_major(inode->cpt_rdev)) {
+		case MEM_MAJOR:
+			e->type = FD_TYPES__REG;
+			break;
+		case TTYAUX_MAJOR:
+		case UNIX98_PTY_MASTER_MAJOR ... (UNIX98_PTY_MASTER_MAJOR + UNIX98_PTY_MAJOR_COUNT - 1):
+		case UNIX98_PTY_SLAVE_MAJOR:
+			e->type = FD_TYPES__TTY;
+			break;
+		default:
+			pr_err("Character file with maj %d inode at @%li\n",
+			       major(inode->cpt_rdev), (long)obj_of(file)->o_pos);
+			return -1;
+		}
+	} else if (S_ISREG(file->fi.cpt_i_mode) || S_ISDIR(file->fi.cpt_i_mode)) {
+		e->type = FD_TYPES__REG;
+	} else if (S_ISFIFO(file->fi.cpt_i_mode)) {
+		if (!inode) {
+			pr_err("Fifo file without inode at @%li\n",
+			       (long)obj_of(file)->o_pos);
+			return -1;
+		}
+		if (inode->cpt_sb == PIPEFS_MAGIC)
+			e->type = FD_TYPES__PIPE;
+		else
+			e->type = FD_TYPES__FIFO;
+	} else {
+		if (type_from_name(e, file) == 0)
+			return 0;
+
+		pr_err("File with unknown type at @%li\n",
+			(long)obj_of(file)->o_pos);
+		return -1;
+	}
+
+	return 0;
+}
+
+enum pid_type {
+	PIDTYPE_PID,
+	PIDTYPE_PGID,
+	PIDTYPE_SID,
+	PIDTYPE_MAX
+};
+
+void fill_fown(FownEntry *e, struct file_struct *file)
+{
+	e->uid		= file->fi.cpt_fown_uid;
+	e->euid		= file->fi.cpt_fown_euid;
+	e->signum	= file->fi.cpt_fown_signo;
+
+	/*
+	 * FIXME
+	 * No info about pid type in OpenVZ image, use
+	 * type PID for a while.
+	 */
+	e->pid_type	= PIDTYPE_PID;
+	e->pid		= file->fi.cpt_fown_pid;
+}
+
+int write_reg_file_entry(context_t *ctx, struct file_struct *file)
+{
+	int rfd = fdset_fd(ctx->fdset_glob, CR_FD_REG_FILES);
+	RegFileEntry rfe = REG_FILE_ENTRY__INIT;
+	FownEntry fown = FOWN_ENTRY__INIT;
+	int ret = -1;
+
+	if (file->dumped)
+		return 0;
+
+	fill_fown(&fown, file);
+
+	rfe.id		= obj_id_of(file);
+	rfe.flags	= file->fi.cpt_flags;
+	rfe.pos		= file->fi.cpt_pos;
+	rfe.fown	= &fown;
+	rfe.name	= file->name;
+
+	ret = pb_write_one(rfd, &rfe, PB_REG_FILES);
+	if (!ret)
+		file->dumped = true;
+
+	return ret;
+}
+
+int write_task_files(context_t *ctx, struct task_struct *t)
+{
+	FdinfoEntry e = FDINFO_ENTRY__INIT;
+	struct files_struct *files;
+	struct fd_struct *fd;
+	int image_fd = -1;
+	int ret = -1;
+
+	/*
+	 * If we share fdtable with parent then simply
+	 * get out early.
+	 */
+	if (t->parent) {
+		if (t->parent->ti.cpt_files == t->ti.cpt_files)
+			return 0;
+	}
+
+	files = obj_lookup_to(CPT_OBJ_FILES, t->ti.cpt_files);
+	if (!files) {
+		pr_err("Can't find files associated with task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	image_fd = open_image(ctx, CR_FD_FDINFO, O_DUMP, t->ti.cpt_pid);
+	if (image_fd < 0)
+		goto out;
+
+	list_for_each_entry(fd, &files->fd_list, list) {
+		struct cpt_inode_image *inode;
+		struct file_struct *file;
+
+		file = obj_lookup_to(CPT_OBJ_FILE, fd->fdi.cpt_file);
+		if (!file)
+			goto out;
+
+		if (file->fi.cpt_inode != -1) {
+			inode = obj_lookup_img(CPT_OBJ_INODE, file->fi.cpt_inode);
+			if (!inode)
+				return -1;
+		} else
+			inode = NULL;
+
+		if (set_fdinfo_type(&e, file, inode)) {
+			pr_err("Can't find file type for  @%li\n",
+			       (long)fd->fdi.cpt_file);
+			goto out;
+		}
+
+		if (e.type != FD_TYPES__REG) {
+			pr_err("Non regular file found %d\n", e.type);
+			ret = -1;
+			goto out;
+		}
+
+		e.id	= obj_id_of(file);
+		e.flags	= fd->fdi.cpt_flags;
+		e.fd	= fd->fdi.cpt_fd;
+
+		ret = pb_write_one(image_fd, &e, PB_FDINFO);
+		if (ret)
+			goto out;
+
+		ret = write_reg_file_entry(ctx, file);
+		if (ret)
+			goto out;
+	}
+	ret = 0;
+
+out:
+	close_safe(&image_fd);
+	return ret;
+}
 
 void free_inodes(context_t *ctx)
 {
@@ -234,6 +462,45 @@ void free_fs(context_t *ctx)
 
 	while ((fs = obj_pop_unhash_to(CPT_OBJ_FS)))
 		obj_free_to(fs);
+}
+
+int write_task_fs(context_t *ctx, struct task_struct *t)
+{
+	FsEntry e = FS_ENTRY__INIT;
+	int ret = -1, fd = -1;
+	struct fs_struct *fs;
+
+	fs = obj_lookup_to(CPT_OBJ_FS, t->ti.cpt_fs);
+	if (!fs) {
+		pr_err("No FS object found for task %d at @%li\n",
+			t->ti.cpt_pid, (long)t->ti.cpt_fs);
+		goto out;
+	}
+
+	fd = open_image(ctx, CR_FD_FS, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		goto out;
+
+	e.has_umask	= true;
+	e.umask		= fs->fsi.cpt_umask;
+	e.root_id	= obj_id_of(fs->root);
+	e.cwd_id	= obj_id_of(fs->cwd);
+
+	if (write_reg_file_entry(ctx, fs->root)) {
+		pr_err("Failed to write reg file for FS root\n");
+		goto out;
+	}
+
+	if (write_reg_file_entry(ctx, fs->cwd)) {
+		pr_err("Failed to write reg file for FS cwd\n");
+		goto out;
+	}
+
+	ret = pb_write_one(fd, &e, PB_FS);
+out:
+	close_safe(&fd);
+
+	return ret;
 }
 
 static void show_fs_cont(context_t *ctx, struct fs_struct *fs)

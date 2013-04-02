@@ -85,6 +85,12 @@ int convert(void)
 		goto out;
 	}
 
+	ret = write_task_images(&ctx);
+	if (ret) {
+		pr_err("Failed to write task images\n");
+		goto out;
+	}
+
 	ret = write_pstree(&ctx);
 	if (ret) {
 		pr_err("Failed writting process tree\n");

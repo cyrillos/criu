@@ -41,12 +41,17 @@ struct fs_struct {
 };
 
 extern int read_files(context_t *ctx);
+extern int write_task_files(context_t *ctx, struct task_struct *t);
 extern void free_files(context_t *ctx);
+
+extern void fill_fown(FownEntry *e, struct file_struct *file);
+extern int write_reg_file_entry(context_t *ctx, struct file_struct *file);
 
 extern int read_inodes(context_t *ctx);
 extern void free_inodes(context_t *ctx);
 
 extern int read_fs(context_t *ctx);
 extern void free_fs(context_t *ctx);
+extern int write_task_fs(context_t *ctx, struct task_struct *t);
 
 #endif /* __CPT2_FILES_H__ */

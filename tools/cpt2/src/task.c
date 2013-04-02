@@ -9,6 +9,7 @@
 #include "hashtable.h"
 #include "xmalloc.h"
 #include "image.h"
+#include "files.h"
 #include "read.h"
 #include "task.h"
 #include "log.h"
@@ -35,6 +36,47 @@ struct task_struct *task_lookup_pid(u32 pid)
 	}
 
 	return NULL;
+}
+
+static int __write_task_images(context_t *ctx, struct task_struct *t)
+{
+	int ret;
+
+	ret = write_task_files(ctx, t);
+	if (ret) {
+		pr_err("Failed writing fdinfo for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_fs(ctx, t);
+	if (ret) {
+		pr_err("Failed writing fs for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
+int write_task_images(context_t *ctx)
+{
+	struct task_struct *child, *task;
+	int ret = 0;
+
+	list_for_each_entry(task, &task_list, list) {
+		ret = __write_task_images(ctx, task);
+		if (ret)
+			goto out;
+		list_for_each_entry(child, &task->children, list) {
+			ret = __write_task_images(ctx, child);
+			if (ret)
+				goto out;
+		}
+	}
+out:
+	return ret;
 }
 
 static int __write_pstree_items(int fd, struct task_struct *t,

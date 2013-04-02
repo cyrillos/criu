@@ -21,6 +21,7 @@ struct task_struct {
 
 extern int read_tasks(context_t *ctx);
 extern int write_pstree(context_t *ctx);
+extern int write_task_images(context_t *ctx);
 extern void free_tasks(context_t *ctx);
 
 extern struct task_struct *root_task;
