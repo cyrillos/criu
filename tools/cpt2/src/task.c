@@ -15,6 +15,7 @@
 #include "log.h"
 #include "obj.h"
 #include "bug.h"
+#include "mm.h"
 #include "ns.h"
 
 #include "protobuf.h"
@@ -46,6 +47,27 @@ static int __write_task_images(context_t *ctx, struct task_struct *t)
 	ret = write_task_files(ctx, t);
 	if (ret) {
 		pr_err("Failed writing fdinfo for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_mm(ctx, t->ti.cpt_pid, t->ti.cpt_mm);
+	if (ret) {
+		pr_err("Failed writing mm for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_vmas(ctx, t->ti.cpt_pid, t->ti.cpt_mm);
+	if (ret) {
+		pr_err("Failed writing vmas for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_pages(ctx, t->ti.cpt_pid, t->ti.cpt_mm);
+	if (ret) {
+		pr_err("Failed writing vmas for task %d\n",
 		       t->ti.cpt_pid);
 		goto out;
 	}

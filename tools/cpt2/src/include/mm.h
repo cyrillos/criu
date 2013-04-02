@@ -29,6 +29,20 @@ struct vma_struct {
 	struct cpt_vma_image	vmai;
 };
 
+struct shmem_struct {
+	struct hlist_node	hash;
+
+	u64			shmid;
+	struct vma_struct	*vma;
+
+	unsigned long		size;
+	pid_t			pid;
+};
+
+#define _calc_vm_trans(x, bit1, bit2)				\
+  ((bit1) <= (bit2) ? ((x) & (bit1)) * ((bit2) / (bit1))	\
+   : ((x) & (bit1)) / ((bit1) / (bit2)))
+
 #define VM_READ		0x00000001
 #define VM_WRITE	0x00000002
 #define VM_EXEC		0x00000004
@@ -81,5 +95,10 @@ struct vma_struct {
 
 extern int read_mm(context_t *ctx);
 extern void free_mm(context_t *ctx);
+
+extern int write_mm(context_t *ctx, pid_t pid, off_t cpt_mm);
+extern int write_vmas(context_t *ctx, pid_t pid, off_t cpt_mm);
+extern int write_pages(context_t *ctx, pid_t pid, off_t cpt_mm);
+extern int write_shmem(context_t *ctx);
 
 #endif /* __CPT2_MM_H__ */

@@ -13,6 +13,7 @@
 #include "task.h"
 #include "cpt2.h"
 #include "log.h"
+#include "mm.h"
 
 static int write_stubs(context_t *ctx)
 {
@@ -100,6 +101,12 @@ int convert(void)
 	ret = write_stubs(&ctx);
 	if (ret) {
 		pr_err("Failed writting stubs\n");
+		goto out;
+	}
+
+	ret = write_shmem(&ctx);
+	if (ret) {
+		pr_err("Failed to write shmem\n");
 		goto out;
 	}
 
