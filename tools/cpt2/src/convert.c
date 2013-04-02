@@ -8,6 +8,7 @@
 #include "protobuf.h"
 #include "context.h"
 #include "convert.h"
+#include "read.h"
 #include "cpt2.h"
 #include "log.h"
 
@@ -37,9 +38,17 @@ int convert(void)
 	if (ret)
 		goto out;
 
+	ret = read_dumpfile(&ctx);
+	if (ret) {
+		pr_err("Failed reading dumpfile %s\n",
+		       global_opts.cpt_filename);
+		goto out;
+	}
+
 	pr_err("Conversion is not yet implemented\n");
 	ret = -1;
 out:
+	read_fini(&ctx);
 	context_fini(&ctx);
 	return ret;
 }

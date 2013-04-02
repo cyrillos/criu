@@ -7,6 +7,7 @@ obj-y	+= context.o
 obj-y	+= image.o
 obj-y	+= protobuf.o
 obj-y	+= obj.o
+obj-y	+= read.o
 
 cflags-y += -iquote include
 
