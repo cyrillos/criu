@@ -9,6 +9,7 @@ obj-y	+= protobuf.o
 obj-y	+= obj.o
 obj-y	+= read.o
 obj-y	+= ns.o
+obj-y	+= task.o
 
 cflags-y += -iquote include
 

@@ -1,0 +1,142 @@
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+
+#include <sys/types.h>
+#include <linux/futex.h>
+
+#include "cpt-image.h"
+#include "hashtable.h"
+#include "xmalloc.h"
+#include "image.h"
+#include "read.h"
+#include "task.h"
+#include "log.h"
+#include "obj.h"
+#include "bug.h"
+
+#include "protobuf.h"
+
+static unsigned int max_threads;
+static LIST_HEAD(task_list);
+struct task_struct *root_task;
+
+#define PID_HASH_BITS		10
+static DEFINE_HASHTABLE(pids_hash, PID_HASH_BITS);
+
+struct task_struct *task_lookup_pid(u32 pid)
+{
+	struct task_struct *task;
+
+	hash_for_each_key(pids_hash, task, hash, pid) {
+		if (task->ti.cpt_pid == pid)
+			return task;
+	}
+
+	return NULL;
+}
+
+static void connect_task(struct task_struct *task)
+{
+	struct task_struct *t;
+
+	/*
+	 * We don't care if there is some of PIDs
+	 * are screwed, the crtools will refuse to
+	 * restore if someone pass us coeeupted data.
+	 *
+	 * Thus we only collect threads and children.
+	 */
+	t = task_lookup_pid(task->ti.cpt_ppid);
+	if (t) {
+		task->parent = t;
+		list_move(&task->list, &t->children);
+		return;
+	}
+
+	t = task_lookup_pid(task->ti.cpt_rppid);
+	if (t) {
+		list_move(&task->list, &t->threads);
+		t->n_threads++;
+
+		if (max_threads < t->n_threads)
+			max_threads = t->n_threads;
+		return;
+	}
+}
+
+void free_tasks(context_t *ctx)
+{
+	struct task_struct *task;
+
+	while ((task = obj_pop_unhash_to(CPT_OBJ_TASK)))
+		obj_free_to(task);
+}
+
+static void show_task_cont(context_t *ctx, struct task_struct *t)
+{
+	struct cpt_task_image *ti = &t->ti;
+
+	pr_debug("\t@%-8li pid %6d tgid %6d ppid %6d rppid %6d pgrp %6d\n"
+		 "\t\tcomm '%s' session %d leader %d 64bit %d\n"
+		 "\t\tmm @%-8ld files @%-8ld fs @%-8ld signal @%-8ld\n",
+		 (long)obj_of(t)->o_pos, ti->cpt_pid, ti->cpt_tgid, ti->cpt_ppid,
+		 ti->cpt_rppid, ti->cpt_pgrp, ti->cpt_comm, ti->cpt_session,
+		 ti->cpt_leader,ti->cpt_64bit, (long)ti->cpt_mm,
+		 (long)ti->cpt_files, (long)ti->cpt_fs, (long)ti->cpt_signal);
+}
+
+int read_tasks(context_t *ctx)
+{
+	struct task_struct *task, *tmp;
+	off_t start, end;
+
+	pr_debug("Tasks\n");
+	pr_debug("------------------------------\n");
+
+	get_section_bounds(ctx, CPT_SECT_TASKS, &start, &end);
+
+	while (start < end) {
+		task = obj_alloc_to(struct task_struct, ti);
+		if (!task)
+			return -1;
+		INIT_LIST_HEAD(&task->list);
+		INIT_LIST_HEAD(&task->children);
+		INIT_LIST_HEAD(&task->threads);
+		task->n_threads = 0;
+		task->parent = NULL;
+
+		if (read_obj(ctx->fd, CPT_OBJ_TASK, &task->ti, sizeof(task->ti), start)) {
+			obj_free_to(task);
+			pr_err("Can't read task object at %li\n", (long)start);
+			return -1;
+		}
+
+		hash_add(pids_hash, &task->hash, task->ti.cpt_pid);
+		list_add_tail(&task->list, &task_list);
+
+		obj_push_hash_to(task, CPT_OBJ_TASK, start);
+
+		if (likely(root_task)) {
+			if (root_task->ti.cpt_pid > task->ti.cpt_pid)
+				root_task = task;
+		} else
+			root_task = task;
+
+		start += task->ti.cpt_next;
+		show_task_cont(ctx, task);
+	}
+	pr_debug("------------------------------\n\n");
+
+	/*
+	 * Create a process tree we will need to dump.
+	 * Because in CRIU protobuf task file there is
+	 * a set of threads associated with every task,
+	 * we've had to collect all tasks first then
+	 * build a process tree.
+	 */
+	list_for_each_entry_safe(task, tmp, &task_list, list)
+		connect_task(task);
+
+	return 0;
+}
