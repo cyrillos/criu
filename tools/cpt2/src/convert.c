@@ -10,6 +10,7 @@
 #include "convert.h"
 #include "image.h"
 #include "read.h"
+#include "task.h"
 #include "cpt2.h"
 #include "log.h"
 
@@ -81,6 +82,12 @@ int convert(void)
 	if (ret) {
 		pr_err("Failed reading dumpfile %s\n",
 		       global_opts.cpt_filename);
+		goto out;
+	}
+
+	ret = write_pstree(&ctx);
+	if (ret) {
+		pr_err("Failed writting process tree\n");
 		goto out;
 	}
 

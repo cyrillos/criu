@@ -16,6 +16,7 @@
 #include "bug.h"
 
 #include "protobuf.h"
+#include "../../../protobuf/pstree.pb-c.h"
 
 static unsigned int max_threads;
 static LIST_HEAD(task_list);
@@ -34,6 +35,75 @@ struct task_struct *task_lookup_pid(u32 pid)
 	}
 
 	return NULL;
+}
+
+static int __write_pstree_items(int fd, struct task_struct *t,
+				PstreeEntry *e, void *threads_buf,
+				unsigned int nr_max)
+{
+	struct task_struct *thread;
+	unsigned int i = 0;
+	int ret = 0;
+
+	pstree_entry__init(e);
+
+	e->pid		= t->ti.cpt_pid;
+	e->ppid		= t->ti.cpt_ppid;
+	e->pgid		= t->ti.cpt_pgrp;
+	e->sid		= t->ti.cpt_session;
+	e->threads	= threads_buf;
+	e->n_threads	= t->n_threads + 1;
+
+	e->threads[i++] = t->ti.cpt_pid;
+
+	list_for_each_entry(thread, &t->threads, list) {
+		BUG_ON(i >= nr_max);
+		e->threads[i++] = thread->ti.cpt_pid;
+	}
+
+	ret = pb_write_one(fd, e, PB_PSTREE);
+	if (!ret) {
+		struct task_struct *child;
+
+		list_for_each_entry(child, &t->children, list) {
+			ret = __write_pstree_items(fd, child, e,
+						   threads_buf, nr_max);
+			if (ret)
+				break;
+		}
+	}
+
+	return ret;
+}
+
+int write_pstree(context_t *ctx)
+{
+	struct task_struct *task;
+	int pstree_fd = -1, ret = 0;
+	PstreeEntry e;
+	void *threads;
+
+	threads = xmalloc(sizeof(e.threads[0]) * (max_threads + 1));
+	if (!threads)
+		return -1;
+
+	pstree_fd = open_image(ctx, CR_FD_PSTREE, O_DUMP);
+	if (pstree_fd < 0) {
+		ret = -1;
+		goto out;
+	}
+
+	list_for_each_entry(task, &task_list, list) {
+		ret = __write_pstree_items(pstree_fd, task, &e,
+					   threads, max_threads);
+		if (ret)
+			break;
+	}
+
+out:
+	close_safe(&pstree_fd);
+	xfree(threads);
+	return ret;
 }
 
 static void connect_task(struct task_struct *task)
