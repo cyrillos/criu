@@ -9,6 +9,7 @@
 #include "cpt-image.h"
 #include "context.h"
 #include "xmalloc.h"
+#include "files.h"
 #include "read.h"
 #include "task.h"
 #include "log.h"
@@ -242,6 +243,9 @@ void read_fini(context_t *ctx)
 {
 	free_ns(ctx);
 	free_sockets(ctx);
+	free_fs(ctx);
+	free_files(ctx);
+	free_inodes(ctx);
 	free_tasks(ctx);
 }
 
@@ -257,6 +261,15 @@ int read_dumpfile(context_t *ctx)
 		return -1;
 
 	if (read_sockets(ctx))
+		return -1;
+
+	if (read_fs(ctx))
+		return -1;
+
+	if (read_inodes(ctx))
+		return -1;
+
+	if (read_files(ctx))
 		return -1;
 
 	if (read_tasks(ctx))
