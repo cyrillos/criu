@@ -12,6 +12,7 @@
 #include "read.h"
 #include "task.h"
 #include "log.h"
+#include "net.h"
 #include "obj.h"
 #include "io.h"
 #include "ns.h"
@@ -240,6 +241,7 @@ static int read_headers(context_t *ctx)
 void read_fini(context_t *ctx)
 {
 	free_ns(ctx);
+	free_sockets(ctx);
 	free_tasks(ctx);
 }
 
@@ -252,6 +254,9 @@ int read_dumpfile(context_t *ctx)
 		return -1;
 
 	if (read_ns(ctx))
+		return -1;
+
+	if (read_sockets(ctx))
 		return -1;
 
 	if (read_tasks(ctx))
