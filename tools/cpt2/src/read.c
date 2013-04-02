@@ -16,6 +16,7 @@
 #include "net.h"
 #include "obj.h"
 #include "io.h"
+#include "mm.h"
 #include "ns.h"
 
 void get_section_bounds(context_t *ctx, int type, off_t *start, off_t *end)
@@ -247,6 +248,7 @@ void read_fini(context_t *ctx)
 	free_files(ctx);
 	free_inodes(ctx);
 	free_tasks(ctx);
+	free_mm(ctx);
 }
 
 int read_dumpfile(context_t *ctx)
@@ -273,6 +275,9 @@ int read_dumpfile(context_t *ctx)
 		return -1;
 
 	if (read_tasks(ctx))
+		return -1;
+
+	if (read_mm(ctx))
 		return -1;
 
 	return 0;

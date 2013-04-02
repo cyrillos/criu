@@ -12,6 +12,7 @@ obj-y	+= ns.o
 obj-y	+= task.o
 obj-y	+= net.o
 obj-y	+= files.o
+obj-y	+= mm.o
 
 cflags-y += -iquote include
 
