@@ -5,6 +5,8 @@
 #include <sys/types.h>
 #include <linux/futex.h>
 
+#include "asm/fpu.h"
+
 #include "cpt-image.h"
 #include "hashtable.h"
 #include "xmalloc.h"
@@ -20,6 +22,7 @@
 
 #include "protobuf.h"
 #include "../../../protobuf/pstree.pb-c.h"
+#include "../../../protobuf/core.pb-c.h"
 
 static unsigned int max_threads;
 static LIST_HEAD(task_list);
@@ -38,6 +41,271 @@ struct task_struct *task_lookup_pid(u32 pid)
 	}
 
 	return NULL;
+}
+
+static u32 decode_segment(u32 segno)
+{
+	if (segno == CPT_SEG_ZERO)
+		return 0;
+
+	if (segno <= CPT_SEG_TLS3)
+		return ((GDT_ENTRY_TLS_MIN + segno - CPT_SEG_TLS1) << 3) + 3;
+
+	if (segno >= CPT_SEG_LDT)
+		return ((segno - CPT_SEG_LDT) << 3) | 7;
+
+	if (segno == CPT_SEG_USER32_DS)
+		return __USER32_DS;
+	if (segno == CPT_SEG_USER32_CS)
+		return __USER32_CS;
+	if (segno == CPT_SEG_USER64_DS)
+		return __USER_DS;
+	if (segno == CPT_SEG_USER64_CS)
+		return __USER_CS;
+
+	pr_err("Invalid segment register %d\n", segno);
+	return 0;
+}
+
+static int read_core_data(context_t *ctx, struct task_struct *t, CoreEntry *core)
+{
+	union {
+		struct cpt_object_hdr		h;
+		struct cpt_obj_bits		bits;
+		struct cpt_x86_64_regs		regs;
+		struct cpt_task_aux_image	aux;
+		struct cpt_signal_image		sig;
+	} u;
+
+	struct xsave_struct xsave;
+
+	off_t start;
+	int ret = -1;
+
+#define __copy_fpu_state()								\
+	do {										\
+		core->thread_info->fpregs->cwd		= xsave.i387.cwd;		\
+		core->thread_info->fpregs->swd		= xsave.i387.swd;		\
+		core->thread_info->fpregs->twd		= xsave.i387.twd;		\
+		core->thread_info->fpregs->fop		= xsave.i387.fop;		\
+		core->thread_info->fpregs->rip		= xsave.i387.rip;		\
+		core->thread_info->fpregs->rdp		= xsave.i387.rdp;		\
+		core->thread_info->fpregs->mxcsr	= xsave.i387.mxcsr;		\
+		core->thread_info->fpregs->mxcsr_mask	= xsave.i387.mxcsr_mask;	\
+											\
+		memcpy(core->thread_info->fpregs->st_space,				\
+		       xsave.i387.st_space, sizeof(xsave.i387.st_space));		\
+		memcpy(core->thread_info->fpregs->xmm_space,				\
+		       xsave.i387.xmm_space, sizeof(xsave.i387.xmm_space));		\
+	} while (0)
+
+	for (start = obj_of(t)->o_pos + t->ti.cpt_hdrlen;
+	     start < obj_of(t)->o_pos + t->ti.cpt_next;
+	     start += u.h.cpt_next) {
+		if (read_obj_cpt(ctx->fd, -1, &u.h, start)) {
+			pr_err("Can't read task data header at %li\n", (long)start);
+			goto out;
+		}
+
+		if (u.h.cpt_object == CPT_OBJ_BITS) {
+			if (read_obj_cpt_cont(ctx->fd, &u.bits)) {
+				pr_err("Can't read bits at %li\n", (long)start);
+				goto out;
+			}
+			switch (u.h.cpt_content) {
+			case CPT_CONTENT_STACK:
+				/* skip it */
+				continue;
+			case CPT_CONTENT_X86_FPUSTATE:
+				if (u.bits.cpt_size != sizeof(xsave.i387)) {
+					pr_err("Inconsistent fxsave frame "
+					       "size %d(%d) at %li\n",
+					       (int)u.bits.cpt_size, (int)sizeof(xsave.i387),
+					       (long)start);
+					goto out;
+				}
+				if (read_data(ctx->fd, &xsave.i387, sizeof(xsave.i387), false)) {
+					pr_err("Can't read bits at %li\n", (long)start);
+					goto out;
+				}
+
+				__copy_fpu_state();
+
+				/*
+				 * Don't forget to drop xsave frame, it can't be
+				 * two frames in one pass.
+				 */
+				core->thread_info->fpregs->xsave = NULL;
+
+				break;
+			case CPT_CONTENT_X86_XSAVE:
+				if (!core->thread_info->fpregs->xsave) {
+					pr_err("Dump corrupted, two FPU frames detected "
+					       "while only one is allowed at %li\n", (long)start);
+					goto out;
+				}
+				if (u.bits.cpt_size != sizeof(xsave)) {
+					pr_err("Inconsistent xsave frame "
+					       "size %d(%d) at %li\n",
+					       (int)u.bits.cpt_size, (int)sizeof(xsave),
+					       (long)start);
+					goto out;
+				}
+				if (read_data(ctx->fd, &xsave, sizeof(xsave), false)) {
+					pr_err("Can't read bits at %li\n", (long)start);
+					goto out;
+				}
+
+				__copy_fpu_state();
+
+				core->thread_info->fpregs->xsave->xstate_bv = xsave.xsave_hdr.xstate_bv;
+
+				memcpy(core->thread_info->fpregs->xsave->ymmh_space,
+				       xsave.ymmh.ymmh_space, sizeof(xsave.ymmh.ymmh_space));
+
+				break;
+			default:
+				goto unknown_obj;
+			}
+		} else if (u.h.cpt_object == CPT_OBJ_X86_64_REGS) {
+			if (read_obj_cpt_cont(ctx->fd, &u.regs)) {
+				pr_err("Can't read task registers at %li\n", (long)start);
+				goto out;
+			}
+
+			core->thread_info->gpregs->r15		= u.regs.cpt_r15;
+			core->thread_info->gpregs->r14		= u.regs.cpt_r14;
+			core->thread_info->gpregs->r13		= u.regs.cpt_r13;
+			core->thread_info->gpregs->r12		= u.regs.cpt_r12;
+			core->thread_info->gpregs->bp		= u.regs.cpt_rbp;
+			core->thread_info->gpregs->bx		= u.regs.cpt_rbx;
+			core->thread_info->gpregs->r11		= u.regs.cpt_r11;
+			core->thread_info->gpregs->r10		= u.regs.cpt_r10;
+			core->thread_info->gpregs->r9		= u.regs.cpt_r9;
+			core->thread_info->gpregs->r8		= u.regs.cpt_r8;
+			core->thread_info->gpregs->ax		= u.regs.cpt_rax;
+			core->thread_info->gpregs->cx		= u.regs.cpt_rcx;
+			core->thread_info->gpregs->dx		= u.regs.cpt_rdx;
+			core->thread_info->gpregs->si		= u.regs.cpt_rsi;
+			core->thread_info->gpregs->di		= u.regs.cpt_rdi;
+			core->thread_info->gpregs->orig_ax	= u.regs.cpt_orig_rax;
+			core->thread_info->gpregs->ip		= u.regs.cpt_rip;
+			core->thread_info->gpregs->cs		= decode_segment(u.regs.cpt_cs);
+			core->thread_info->gpregs->flags	= u.regs.cpt_eflags;
+			core->thread_info->gpregs->sp		= u.regs.cpt_rsp;
+			core->thread_info->gpregs->ss		= decode_segment(u.regs.cpt_ss);
+			core->thread_info->gpregs->fs_base	= u.regs.cpt_fsbase;
+			core->thread_info->gpregs->gs_base	= u.regs.cpt_gsbase;
+			core->thread_info->gpregs->ds		= decode_segment(u.regs.cpt_ds);
+			core->thread_info->gpregs->es		= decode_segment(u.regs.cpt_es);
+			core->thread_info->gpregs->fs		= decode_segment(u.regs.cpt_fsindex);
+			core->thread_info->gpregs->gs		= decode_segment(u.regs.cpt_gsindex);
+
+		} else if (u.h.cpt_object == CPT_OBJ_TASK_AUX) {
+			if (read_obj_cpt_cont(ctx->fd, &u.aux)) {
+				pr_err("Can't read task aux data at %li\n", (long)start);
+				goto out;
+			}
+			/* See note at FUTEX_RLA_LEN definition */
+			core->thread_core->futex_rla		= u.aux.cpt_robust_list;
+			core->thread_core->futex_rla_len	= FUTEX_RLA_LEN;
+		} else if (u.h.cpt_object == CPT_OBJ_SIGNAL_STRUCT)
+			continue;
+		else
+			goto unknown_obj;
+	}
+	ret = 0;
+out:
+	return ret;
+
+unknown_obj:
+	pr_err("Unexpected object %d at %li\n",
+	       u.h.cpt_object, (long)start);
+	goto out;
+
+#undef __copy_fpu_state
+}
+
+/*
+ * No threads yet.
+ */
+static int write_task_core(context_t *ctx, struct task_struct *t)
+{
+	ThreadCoreEntry thread_core = THREAD_CORE_ENTRY__INIT;
+	ThreadInfoX86 thread_info = THREAD_INFO_X86__INIT;
+	TaskCoreEntry tc = TASK_CORE_ENTRY__INIT;
+	CoreEntry core = CORE_ENTRY__INIT;
+
+	UserX86RegsEntry gpregs = USER_X86_REGS_ENTRY__INIT;
+	UserX86FpregsEntry fpregs = USER_X86_FPREGS_ENTRY__INIT;
+	UserX86XsaveEntry xsave = USER_X86_XSAVE_ENTRY__INIT;
+
+	struct xsave_struct x;
+
+	int core_fd = -1, ret = -1;
+
+	core_fd = open_image(ctx, CR_FD_CORE, O_DUMP, t->ti.cpt_pid);
+	if (core_fd < 0)
+		return -1;
+
+	/*
+	 * Bind core topology, the callee may maodify it so don't
+	 * assume it's immutable.
+	 */
+	core.mtype			= CORE_ENTRY__MARCH__X86_64;
+	core.thread_info		= &thread_info;
+	core.tc				= &tc;
+
+	core.thread_core		= &thread_core;
+
+	thread_info.gpregs		= &gpregs;
+	thread_info.fpregs		= &fpregs;
+
+	BUILD_BUG_ON(sizeof(x.i387.st_space[0]) != sizeof(fpregs.st_space[0]));
+	BUILD_BUG_ON(sizeof(x.i387.xmm_space[0]) != sizeof(fpregs.xmm_space[0]));
+	BUILD_BUG_ON(sizeof(x.ymmh.ymmh_space[0]) != sizeof(xsave.ymmh_space[0]));
+
+	xsave.n_ymmh_space		= ARRAY_SIZE(x.ymmh.ymmh_space);
+	xsave.ymmh_space		= x.ymmh.ymmh_space;
+
+	fpregs.xsave			= &xsave;
+
+	fpregs.n_st_space		= ARRAY_SIZE(x.i387.st_space);
+	fpregs.st_space			= x.i387.st_space;
+	fpregs.n_xmm_space		= ARRAY_SIZE(x.i387.xmm_space);
+	fpregs.xmm_space		= x.i387.xmm_space;
+
+	if (read_core_data(ctx, t, &core)) {
+		pr_err("Failed to read core data for task %d\n",
+		       t->ti.cpt_pid);
+			goto out;
+	}
+
+	/*
+	 * FIXME For a while set it as TASK_ALIVE
+	 */
+
+	/* tc.task_state			= t->ti.cpt_state; */
+	tc.task_state			= 1;
+	tc.exit_code			= t->ti.cpt_exit_code;
+	tc.personality			= t->ti.cpt_personality;
+	tc.flags			= t->ti.cpt_flags;
+	tc.blk_sigset			= t->ti.cpt_sigrblocked;
+	tc.comm				= (char *)t->ti.cpt_comm;
+
+	ret = pb_write_one(core_fd, &core, PB_CORE);
+
+#if 0
+	/*
+	 * FIXME No sched entries in image yet.
+	 */
+	thread_core.sched_nice		= 0;
+	thread_core.sched_policy	= 0;
+	thread_core.sched_prio		= 0;
+#endif
+out:
+	close_safe(&core_fd);
+	return ret;
 }
 
 static int __write_task_images(context_t *ctx, struct task_struct *t)
@@ -68,6 +336,13 @@ static int __write_task_images(context_t *ctx, struct task_struct *t)
 	ret = write_pages(ctx, t->ti.cpt_pid, t->ti.cpt_mm);
 	if (ret) {
 		pr_err("Failed writing vmas for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_core(ctx, t);
+	if (ret) {
+		pr_err("Failed writing core for task %d\n",
 		       t->ti.cpt_pid);
 		goto out;
 	}
