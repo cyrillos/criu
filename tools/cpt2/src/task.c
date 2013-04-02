@@ -308,6 +308,63 @@ out:
 	return ret;
 }
 
+static int write_task_kids(context_t *ctx, struct task_struct *t)
+{
+	TaskKobjIdsEntry kids = TASK_KOBJ_IDS_ENTRY__INIT;
+	int fd, ret = -1;
+	obj_t *obj;
+
+	fd = open_image(ctx, CR_FD_IDS, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		return -1;
+
+	/*
+	 * FIXME In crtools we use 32 bit kids, while
+	 * openvz is using 64 bit ones.
+	 */
+
+	obj = obj_hash_lookup(CPT_OBJ_MM, t->ti.cpt_mm);
+	if (!obj) {
+		pr_err("Can't find mm at @%li\n", (long)t->ti.cpt_mm);
+		goto out;
+	}
+	kids.vm_id	= t->ti.cpt_mm;
+
+	obj = obj_hash_lookup(CPT_OBJ_FILES, t->ti.cpt_files);
+	if (!obj) {
+		pr_err("Can't find files at @%li\n", (long)t->ti.cpt_files);
+		goto out;
+	}
+	kids.files_id		= t->ti.cpt_files;
+
+	kids.fs_id		= t->ti.cpt_fs;
+	kids.sighand_id		= t->ti.cpt_sighand;
+
+	kids.has_pid_ns_id	= true;
+	kids.has_net_ns_id	= true;
+	kids.has_ipc_ns_id	= true;
+	kids.has_uts_ns_id	= true;
+	kids.has_mnt_ns_id	= true;
+
+	/*
+	 * FIXME See write_inventory() routine.
+	 * There IDs are taken for debug purpose
+	 * only!
+	 */
+
+	kids.pid_ns_id		= 1;
+	kids.net_ns_id		= 2;
+	kids.ipc_ns_id		= 2;
+	kids.uts_ns_id		= 2;
+	kids.mnt_ns_id		= 2;
+	kids.mnt_ns_id		= t->ti.cpt_namespace;
+
+	ret = pb_write_one(fd, &kids, PB_IDS);
+out:
+	close(fd);
+	return ret;
+}
+
 static int __write_task_images(context_t *ctx, struct task_struct *t)
 {
 	int ret;
@@ -343,6 +400,13 @@ static int __write_task_images(context_t *ctx, struct task_struct *t)
 	ret = write_task_core(ctx, t);
 	if (ret) {
 		pr_err("Failed writing core for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_kids(ctx, t);
+	if (ret) {
+		pr_err("Failed writing kernel-ids for task %d\n",
 		       t->ti.cpt_pid);
 		goto out;
 	}

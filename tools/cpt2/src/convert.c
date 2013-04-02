@@ -15,6 +15,60 @@
 #include "log.h"
 #include "mm.h"
 
+#include "protobuf.h"
+#include "../../../protobuf/inventory.pb-c.h"
+
+static int write_inventory(context_t *ctx)
+{
+	TaskKobjIdsEntry kids = TASK_KOBJ_IDS_ENTRY__INIT;
+	InventoryEntry e = INVENTORY_ENTRY__INIT;
+	int fd, ret;
+
+	pr_info("Writing image inventory (version %u)\n", CRTOOLS_IMAGES_V1);
+
+	fd = open_image(ctx, CR_FD_INVENTORY, O_DUMP);
+	if (fd < 0)
+		return -1;
+
+	/*
+	 * Inventory kIDs should be unique here. Since we know that
+	 * offsets to cpt_ entries used are greater than 1, just
+	 * use trivial numbers increment to obtain uniqueness.
+	 */
+	kids.vm_id		= root_task->ti.cpt_mm + 1;
+	kids.files_id		= root_task->ti.cpt_files + 1;
+	kids.fs_id		= root_task->ti.cpt_fs + 1;
+	kids.sighand_id		= root_task->ti.cpt_sighand + 1;
+
+	kids.has_pid_ns_id	= true;
+	kids.has_net_ns_id	= true;
+	kids.has_ipc_ns_id	= true;
+	kids.has_uts_ns_id	= true;
+	kids.has_mnt_ns_id	= true;
+
+	/*
+	 * FIXME
+	 *
+	 * These values here left for debug purpose,
+	 * need some sane ones.
+	 */
+	kids.pid_ns_id		= 2;
+	kids.net_ns_id		= 2;
+	kids.ipc_ns_id		= 2;
+	kids.uts_ns_id		= 2;
+	kids.mnt_ns_id		= 2;
+
+	e.img_version		= CRTOOLS_IMAGES_V1;
+	e.fdinfo_per_id		= false;
+	e.has_fdinfo_per_id	= false;
+	e.root_ids		= &kids;
+
+	ret = pb_write_one(fd, &e, PB_INVENTORY);
+	close(fd);
+
+	return ret;
+}
+
 static int write_stubs(context_t *ctx)
 {
 	int fd;
@@ -107,6 +161,12 @@ int convert(void)
 	ret = write_shmem(&ctx);
 	if (ret) {
 		pr_err("Failed to write shmem\n");
+		goto out;
+	}
+
+	ret = write_inventory(&ctx);
+	if (ret) {
+		pr_err("Failed to write inventory\n");
 		goto out;
 	}
 
