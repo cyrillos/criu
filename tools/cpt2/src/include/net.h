@@ -20,4 +20,6 @@ extern int read_sockets(context_t *ctx);
 extern void free_sockets(context_t *ctx);
 extern struct sock_struct *sk_lookup_file(u64 cpt_file);
 
+extern int write_task_route(context_t *ctx, struct task_struct *t);
+
 #endif /* __CPT2_NET_H__ */

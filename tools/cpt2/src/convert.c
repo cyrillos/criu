@@ -170,8 +170,7 @@ int convert(void)
 		goto out;
 	}
 
-	pr_err("Conversion is not yet implemented\n");
-	ret = -1;
+	pr_warn("Conversion is not yet implemented and still in debug state\n");
 out:
 	read_fini(&ctx);
 	context_fini(&ctx);

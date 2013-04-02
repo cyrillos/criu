@@ -17,12 +17,16 @@
 #include "log.h"
 #include "obj.h"
 #include "bug.h"
+#include "net.h"
 #include "mm.h"
 #include "ns.h"
 
 #include "protobuf.h"
 #include "../../../protobuf/pstree.pb-c.h"
+#include "../../../protobuf/itimer.pb-c.h"
+#include "../../../protobuf/creds.pb-c.h"
 #include "../../../protobuf/core.pb-c.h"
+#include "../../../protobuf/sa.pb-c.h"
 
 static unsigned int max_threads;
 static LIST_HEAD(task_list);
@@ -365,6 +369,195 @@ out:
 	return ret;
 }
 
+#define SIGMAX 64
+
+static int write_sighandlers(context_t *ctx, struct task_struct *t)
+{
+	SaEntry e = SA_ENTRY__INIT;
+	int ret = -1, fd = -1;
+	unsigned int i;
+
+	fd = open_image(ctx, CR_FD_SIGACT, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		goto err;
+
+	for (i = 0; i < SIGMAX; i++) {
+		sa_entry__init(&e);
+		if (pb_write_one(fd, &e, PB_SIGACT) < 0)
+			goto err;
+	}
+
+	ret = 0;
+err:
+	close_safe(&fd);
+	return ret;}
+
+static int write_task_itimers(context_t *ctx, struct task_struct *t)
+{
+	int ret = 0, fd = -1;
+	ItimerEntry ie;
+
+	fd = open_image(ctx, CR_FD_ITIMERS, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		return -1;
+
+	/*
+	 * FIXME
+	 *
+	 * No real data yet
+	 */
+
+	/* real */
+	itimer_entry__init(&ie);
+	ret = pb_write_one(fd, &ie, PB_ITIMERS);
+	if (ret)
+		goto err;
+
+	/* virt */
+	itimer_entry__init(&ie);
+	ret = pb_write_one(fd, &ie, PB_ITIMERS);
+	if (ret)
+		goto err;
+
+	/* prof */
+	itimer_entry__init(&ie);
+	ret = pb_write_one(fd, &ie, PB_ITIMERS);
+	if (ret)
+		goto err;
+err:
+	close_safe(&fd);
+	return ret;
+}
+
+static int write_task_creds(context_t *ctx, struct task_struct *t)
+{
+	CredsEntry ce = CREDS_ENTRY__INIT;
+	int ret = 0, fd = -1;
+	u64 bset = ~0;
+
+	fd = open_image(ctx, CR_FD_CREDS, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		return -1;
+
+	ce.uid		= t->ti.cpt_uid;
+	ce.gid		= t->ti.cpt_gid;
+	ce.euid		= t->ti.cpt_euid;
+	ce.egid		= t->ti.cpt_egid;
+	ce.suid		= t->ti.cpt_suid;
+	ce.sgid		= t->ti.cpt_sgid;
+	ce.fsuid	= t->ti.cpt_fsuid;
+	ce.fsgid	= t->ti.cpt_fsgid;
+
+	ce.n_cap_inh	= sizeof(t->ti.cpt_icap) / sizeof(ce.cap_inh[0]);
+	ce.cap_inh	= (u32 *)&t->ti.cpt_icap;
+
+	ce.n_cap_prm	= sizeof(t->ti.cpt_pcap) / sizeof(ce.cap_prm[0]);
+	ce.cap_prm	= (u32 *)&t->ti.cpt_pcap;
+
+	ce.n_cap_eff	= sizeof(t->ti.cpt_ecap) / sizeof(ce.cap_eff[0]);
+	ce.cap_eff	= (u32 *)&t->ti.cpt_ecap;
+
+	/*
+	 * FIXME bset is container wide, yet not found where.
+	 */
+	ce.n_cap_bnd	= sizeof(bset) / sizeof(ce.cap_bnd[0]);
+	ce.cap_bnd	= (u32 *)&bset;
+
+	ce.secbits	= t->ti.cpt_keepcap;
+
+	ce.n_groups	= t->ti.cpt_ngids;
+	ce.groups	= t->ti.cpt_gids;
+
+	ret = pb_write_one(fd, &ce, PB_CREDS);
+
+	close_safe(&fd);
+	return ret;
+}
+
+static int write_task_utsns(context_t *ctx, struct task_struct *t)
+{
+	int ret = 0;
+	int fd = -1;
+
+	fd = open_image(ctx, CR_FD_UTSNS, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		return -1;
+	goto out;
+out:
+	close_safe(&fd);
+	return ret;
+}
+
+static int write_task_ipc(context_t *ctx, struct task_struct *t)
+{
+	int ret = -1;
+	int fd_ipc_var = -1, fd_ipc_shm = -1;
+	int fd_ipc_msg = -1, fd_ipc_sem = -1;
+
+	fd_ipc_var = open_image(ctx, CR_FD_IPCNS_VAR, O_DUMP, t->ti.cpt_pid);
+	if (fd_ipc_var < 0)
+		goto out;
+	fd_ipc_shm = open_image(ctx, CR_FD_IPCNS_SHM, O_DUMP, t->ti.cpt_pid);
+	if (fd_ipc_shm < 0)
+		goto out;
+	fd_ipc_msg = open_image(ctx, CR_FD_IPCNS_MSG, O_DUMP, t->ti.cpt_pid);
+	if (fd_ipc_msg < 0)
+		goto out;
+	fd_ipc_sem = open_image(ctx, CR_FD_IPCNS_SEM, O_DUMP, t->ti.cpt_pid);
+	if (fd_ipc_sem < 0)
+		goto out;
+	ret = 0;
+out:
+	close_safe(&fd_ipc_var);
+	close_safe(&fd_ipc_shm);
+	close_safe(&fd_ipc_msg);
+	close_safe(&fd_ipc_sem);
+	return ret;
+}
+
+
+static int write_task_flocks(context_t *ctx, struct task_struct *t)
+{
+	int ret = 0;
+	int fd = -1;
+
+	fd = open_image(ctx, CR_FD_FILE_LOCKS, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		return -1;
+	goto out;
+out:
+	close_safe(&fd);
+	return ret;
+}
+
+static int write_task_netdev(context_t *ctx, struct task_struct *t)
+{
+	int ret = 0;
+	int fd = -1;
+
+	fd = open_image(ctx, CR_FD_NETDEV, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		return -1;
+	goto out;
+out:
+	close_safe(&fd);
+	return ret;
+}
+
+static int write_task_ifaddr(context_t *ctx, struct task_struct *t)
+{
+	int ret = 0;
+	int fd = -1;
+
+	fd = open_image(ctx, CR_FD_IFADDR, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		return -1;
+	goto out;
+out:
+	close_safe(&fd);
+	return ret;
+}
+
 static int __write_task_images(context_t *ctx, struct task_struct *t)
 {
 	int ret;
@@ -411,6 +604,41 @@ static int __write_task_images(context_t *ctx, struct task_struct *t)
 		goto out;
 	}
 
+	ret = write_sighandlers(ctx, t);
+	if (ret) {
+		pr_err("Failed writing sighandlers for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_itimers(ctx, t);
+	if (ret) {
+		pr_err("Failed writing itimers for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_creds(ctx, t);
+	if (ret) {
+		pr_err("Failed writing creds for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_utsns(ctx, t);
+	if (ret) {
+		pr_err("Failed writing utsns for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_ipc(ctx, t);
+	if (ret) {
+		pr_err("Failed writing ipc for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
 	ret = write_task_fs(ctx, t);
 	if (ret) {
 		pr_err("Failed writing fs for task %d\n",
@@ -421,6 +649,34 @@ static int __write_task_images(context_t *ctx, struct task_struct *t)
 	ret = write_task_mountpoints(ctx, t);
 	if (ret) {
 		pr_err("Failed writing mountpoints for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_flocks(ctx, t);
+	if (ret) {
+		pr_err("Failed writing file locks for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_netdev(ctx, t);
+	if (ret) {
+		pr_err("Failed writing netdev for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_ifaddr(ctx, t);
+	if (ret) {
+		pr_err("Failed writing ifaddr for task %d\n",
+		       t->ti.cpt_pid);
+		goto out;
+	}
+
+	ret = write_task_route(ctx, t);
+	if (ret) {
+		pr_err("Failed writing route for task %d\n",
 		       t->ti.cpt_pid);
 		goto out;
 	}

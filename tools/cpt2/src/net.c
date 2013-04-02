@@ -9,6 +9,7 @@
 #include "xmalloc.h"
 #include "image.h"
 #include "read.h"
+#include "task.h"
 #include "net.h"
 #include "log.h"
 #include "obj.h"
@@ -33,6 +34,24 @@ struct sock_struct *sk_lookup_file(u64 cpt_file)
 	}
 
 	return NULL;
+}
+
+int write_task_route(context_t *ctx, struct task_struct *t)
+{
+	u32 magic = ROUTE_DUMP_MAGIC;
+	int ret = 0, fd = -1;
+
+	fd = open_image(ctx, CR_FD_ROUTE, O_DUMP, t->ti.cpt_pid);
+	if (fd < 0)
+		return -1;
+
+	ret = write_data(fd, &magic, sizeof(magic));
+	if (ret)
+		pr_err("Failed to write route magic (pid %d)\n",
+		       t->ti.cpt_pid);
+
+	close_safe(&fd);
+	return ret;
 }
 
 void free_sockets(context_t *ctx)
