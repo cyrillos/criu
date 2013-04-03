@@ -89,7 +89,6 @@ static int write_stubs(context_t *ctx)
 	gen_stub(INOTIFY_WD);
 	gen_stub(FANOTIFY);
 	gen_stub(FANOTIFY_MARK);
-	gen_stub(PIPES);
 	gen_stub(PIPES_DATA);
 	gen_stub(FIFO);
 	gen_stub(FIFO_DATA);

@@ -22,6 +22,7 @@
 #include "protobuf.h"
 #include "../../../protobuf/fdinfo.pb-c.h"
 #include "../../../protobuf/regfile.pb-c.h"
+#include "../../../protobuf/pipe.pb-c.h"
 #include "../../../protobuf/fs.pb-c.h"
 
 static int type_from_name(FdinfoEntry *e, struct file_struct *file)
@@ -168,6 +169,47 @@ int write_reg_file_entry(context_t *ctx, struct file_struct *file)
 	return ret;
 }
 
+static int write_pipe_entry(context_t *ctx, struct file_struct *file)
+{
+	int fd = fdset_fd(ctx->fdset_glob, CR_FD_PIPES);
+	PipeEntry pe = PIPE_ENTRY__INIT;
+	FownEntry fown = FOWN_ENTRY__INIT;
+	struct cpt_inode_image *inode;
+	int ret = -1;
+
+	if (file->dumped)
+		return 0;
+
+	if (file->fi.cpt_flags & O_DIRECT) {
+		pr_err("The packetized mode for pipes is not supported yet\n");
+		return -1;
+	}
+
+	inode = obj_lookup_img(CPT_OBJ_INODE, file->fi.cpt_inode);
+	if (!inode) {
+		pr_err("No inode for pipe on file @%li\n",
+		       (long)obj_of(file)->o_pos);
+		return -1;
+	}
+
+	fill_fown(&fown, file);
+
+	pe.id		= obj_id_of(file);
+	pe.pipe_id	= obj_id_of(inode);
+	pe.flags	= file->fi.cpt_flags;
+	pe.fown		= &fown;
+
+	ret = pb_write_one(fd, &pe, PB_PIPES);
+	if (!ret)
+		file->dumped = true;
+
+	/*
+	 * FIXME Where is the pipe data?
+	 */
+
+	return ret;
+}
+
 int write_task_files(context_t *ctx, struct task_struct *t)
 {
 	FdinfoEntry e = FDINFO_ENTRY__INIT;
@@ -217,12 +259,6 @@ int write_task_files(context_t *ctx, struct task_struct *t)
 			goto out;
 		}
 
-		if (e.type != FD_TYPES__REG) {
-			pr_err("Non regular file found %d\n", e.type);
-			ret = -1;
-			goto out;
-		}
-
 		e.id	= obj_id_of(file);
 		e.flags	= fd->fdi.cpt_flags;
 		e.fd	= fd->fdi.cpt_fd;
@@ -231,7 +267,19 @@ int write_task_files(context_t *ctx, struct task_struct *t)
 		if (ret)
 			goto out;
 
-		ret = write_reg_file_entry(ctx, file);
+		switch (e.type) {
+		case FD_TYPES__REG:
+			ret = write_reg_file_entry(ctx, file);
+			break;
+		case FD_TYPES__PIPE:
+			ret = write_pipe_entry(ctx, file);
+			break;
+		default:
+			pr_err("Unsupported file found (type = %d)\n", e.type);
+			ret = -1;
+			break;
+		}
+
 		if (ret)
 			goto out;
 	}
