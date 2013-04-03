@@ -97,8 +97,6 @@ static int write_stubs(context_t *ctx)
 	gen_stub(PACKETSK);
 	gen_stub(SK_QUEUES);
 	gen_stub(REMAP_FPATH);
-	gen_stub(TTY);
-	gen_stub(TTY_INFO);
 	gen_stub(RLIMIT);
 	gen_stub(NETLINKSK);
 #undef gen_stub

@@ -16,6 +16,7 @@
 #include "read.h"
 #include "log.h"
 #include "net.h"
+#include "tty.h"
 #include "obj.h"
 #include "bug.h"
 
@@ -273,6 +274,9 @@ int write_task_files(context_t *ctx, struct task_struct *t)
 			break;
 		case FD_TYPES__PIPE:
 			ret = write_pipe_entry(ctx, file);
+			break;
+		case FD_TYPES__TTY:
+			ret = write_tty_entry(ctx, file);
 			break;
 		default:
 			pr_err("Unsupported file found (type = %d)\n", e.type);
