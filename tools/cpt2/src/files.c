@@ -244,18 +244,24 @@ int write_task_files(context_t *ctx, struct task_struct *t)
 		struct file_struct *file;
 
 		file = obj_lookup_to(CPT_OBJ_FILE, fd->fdi.cpt_file);
-		if (!file)
+		if (!file) {
+			pr_err("Can't find file associated with fd %d\n",
+			       fd->fdi.cpt_fd);
 			goto out;
+		}
 
 		if (file->fi.cpt_inode != -1) {
 			inode = obj_lookup_img(CPT_OBJ_INODE, file->fi.cpt_inode);
-			if (!inode)
+			if (!inode) {
+				pr_err("No inode @%li for file at @%li\n",
+				       (long)file->fi.cpt_inode, obj_pos_of(file));
 				return -1;
+			}
 		} else
 			inode = NULL;
 
 		if (set_fdinfo_type(&e, file, inode)) {
-			pr_err("Can't find file type for  @%li\n",
+			pr_err("Can't find file type for @%li\n",
 			       (long)fd->fdi.cpt_file);
 			goto out;
 		}
@@ -277,6 +283,9 @@ int write_task_files(context_t *ctx, struct task_struct *t)
 			break;
 		case FD_TYPES__TTY:
 			ret = write_tty_entry(ctx, file);
+			break;
+		case FD_TYPES__UNIXSK:
+			ret = write_socket(ctx, file);
 			break;
 		default:
 			pr_err("Unsupported file found (type = %d)\n", e.type);

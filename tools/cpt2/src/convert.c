@@ -92,7 +92,6 @@ static int write_stubs(context_t *ctx)
 	gen_stub(PIPES_DATA);
 	gen_stub(FIFO);
 	gen_stub(FIFO_DATA);
-	gen_stub(UNIXSK);
 	gen_stub(INETSK);
 	gen_stub(PACKETSK);
 	gen_stub(SK_QUEUES);

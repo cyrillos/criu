@@ -251,6 +251,7 @@ void read_fini(context_t *ctx)
 	free_inodes(ctx);
 	free_tasks(ctx);
 	free_mm(ctx);
+	free_netdev(ctx);
 }
 
 int read_dumpfile(context_t *ctx)
@@ -267,10 +268,13 @@ int read_dumpfile(context_t *ctx)
 	if (read_fs(ctx))
 		return -1;
 
+	if (read_inodes(ctx))
+		return -1;
+
 	if (read_sockets(ctx))
 		return -1;
 
-	if (read_inodes(ctx))
+	if (read_netdev(ctx))
 		return -1;
 
 	if (read_files(ctx))
