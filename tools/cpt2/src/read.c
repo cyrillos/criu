@@ -264,10 +264,10 @@ int read_dumpfile(context_t *ctx)
 	if (read_ns(ctx))
 		return -1;
 
-	if (read_sockets(ctx))
+	if (read_fs(ctx))
 		return -1;
 
-	if (read_fs(ctx))
+	if (read_sockets(ctx))
 		return -1;
 
 	if (read_inodes(ctx))
