@@ -13,6 +13,8 @@
 #include "cpt2.h"
 #include "log.h"
 
+#include "res/vdso-rhel.h"
+
 opts_t global_opts = {
 	.loglevel = DEFAULT_LOGLEVEL,
 };

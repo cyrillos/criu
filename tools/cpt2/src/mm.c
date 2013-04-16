@@ -11,10 +11,13 @@
 #include "image.h"
 #include "files.h"
 #include "read.h"
+#include "vdso.h"
 #include "log.h"
 #include "obj.h"
 #include "bug.h"
 #include "mm.h"
+
+#include "res/vdso-rhel.h"
 
 #include "protobuf.h"
 #include "../../../protobuf/regfile.pb-c.h"
@@ -25,6 +28,7 @@
 #include "../../../protobuf/mm.pb-c.h"
 
 static u32 pages_ids = 1;
+static u8 zero_page[PAGE_SIZE];
 
 #define SHMEM_HASH_BITS	10
 static DEFINE_HASHTABLE(shmem_hash, SHMEM_HASH_BITS);
@@ -163,6 +167,48 @@ static bool should_dump_vma(struct vma_struct *vma)
 	return true;
 }
 
+static int write_vdso_pages(context_t *ctx, int pagemap_fd, int page_fd,
+			    struct vma_struct *vma)
+{
+	PagemapEntry pe = PAGEMAP_ENTRY__INIT;
+	unsigned long aligned, size;
+	int ret = -1;
+	void *src;
+
+	if (ctx->h.cpt_image_version < CPT_VERSION_32 ||
+	    vma->vmai.cpt_type == CPT_VMA_VDSO_OLD) {
+		src	= (void *)vdso_blob_rhel5;
+		size	= sizeof(vdso_blob_rhel5);
+	} else {
+		src	= (void *)vdso_blob_rhel6;
+		size	= sizeof(vdso_blob_rhel6);
+	}
+
+	aligned		= ALIGN(size, PAGE_SIZE);
+
+	pe.vaddr	= vma->vmai.cpt_start;
+	pe.nr_pages	= PAGES(aligned);
+
+	if (pb_write_one(pagemap_fd, &pe, PB_PAGEMAP) < 0)
+		goto err;
+
+	if (__write(page_fd, src, size)) {
+		pr_err("Can't write vDSO pages at %li\n",
+		       obj_pos_of(vma));
+		goto err;
+	}
+
+	if (__write(page_fd, zero_page, aligned - size)) {
+		pr_err("Can't write vDSO zero pages at %li\n",
+		       obj_pos_of(vma));
+		goto err;
+	}
+
+	ret = 0;
+err:
+	return ret;
+}
+
 static int write_vma_pages(context_t *ctx, int pagemap_fd, int page_fd,
 			   struct vma_struct *vma)
 {
@@ -177,6 +223,9 @@ static int write_vma_pages(context_t *ctx, int pagemap_fd, int page_fd,
 	off_t start, end;
 	PagemapEntry pe;
 	int ret = -1;
+
+	if (unlikely(vma_is(vma, VMA_AREA_VDSO)))
+		return write_vdso_pages(ctx, pagemap_fd, page_fd, vma);
 
 	start	= obj_of(vma)->o_pos + vma->vmai.cpt_hdrlen;
 	end	= obj_of(vma)->o_pos + vma->vmai.cpt_next;
@@ -327,7 +376,14 @@ int write_pages(context_t *ctx, pid_t pid, off_t cpt_mm)
 		goto err;
 
 	list_for_each_entry(vma, &mm->vma_list, list) {
-		if (!should_dump_vma(vma) || !vma_has_payload(vma))
+		if (!should_dump_vma(vma))
+			continue;
+
+		/*
+		 * For vDSO we need to provide own content even
+		 * if it's not provided in image.
+		 */
+		if (!vma_has_payload(vma) && !vma_is(vma, VMA_AREA_VDSO))
 			continue;
 
 		ret = write_vma_pages(ctx, pagemap_fd, page_fd, vma);

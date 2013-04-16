@@ -67,6 +67,8 @@ struct cr_fd_desc_tmpl template[CR_FD_MAX] = {
 	FD_ENTRY(FILE_LOCKS,		"filelocks-%d"),
 	FD_ENTRY(RLIMIT,		"rlimit"),
 	FD_ENTRY(PAGES,			"pages-%u"),
+	FD_ENTRY(PAGES_OLD,		"pages-%d"),
+	FD_ENTRY(SHM_PAGES_OLD,		"pages-shmem-%ld"),
 	FD_ENTRY(SIGNAL,		"signal-s-%d"),
 	FD_ENTRY(PSIGNAL,		"signal-p-%d"),
 };

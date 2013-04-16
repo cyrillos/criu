@@ -97,12 +97,17 @@ PROGRAM		:= cpt2
 
 protobuf: ../../protobuf/built-in.o
 
-src/%: protobuf
+src/res/%:
+	$(Q) $(MAKE) $(build)=src/res $@
+src/res/built-in.o:
+	$(Q) $(MAKE) $(build)=src/res $@
+
+src/%: protobuf src/res/built-in.o
 	$(Q) $(MAKE) $(build)=src $@
-src/built-in.o: src protobuf
+src/built-in.o: src protobuf src/res/built-in.o
 	$(Q) $(MAKE) $(build)=src all
 
-$(PROGRAM): src/built-in.o ../../protobuf/built-in.o
+$(PROGRAM): src/built-in.o src/res/built-in.o ../../protobuf/built-in.o
 	$(E) "  LINK    " $@
 	$(Q) $(CC) $(CFLAGS) $^ $(LIBS) -o $@
 
@@ -116,6 +121,7 @@ tags:
 clean:
 	$(E) "  CLEAN"
 	$(Q) $(MAKE) $(build)=src clean
+	$(Q) $(MAKE) $(build)=src/res clean
 	$(Q) $(RM) $(PROGRAM)
 
 .DEFAULT_GOAL := all

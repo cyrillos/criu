@@ -15,6 +15,7 @@ struct mm_struct {
 
 	bool			has_auxv;
 	off_t			auxv_at;
+
 	struct vma_struct	*exec_vma;
 
 	struct cpt_mm_image	mmi;
