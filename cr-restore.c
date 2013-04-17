@@ -56,6 +56,7 @@
 #include "cpu.h"
 #include "file-lock.h"
 #include "page-read.h"
+#include "vdso.h"
 
 #include "protobuf.h"
 #include "protobuf/sa.pb-c.h"
@@ -74,6 +75,13 @@ static int sigreturn_restore(pid_t pid, CoreEntry *core);
 static int prepare_restorer_blob(void);
 
 static VM_AREA_LIST(rst_vmas); /* XXX .longest is NOT tracked for this guy */
+
+static struct vdso_proxy_s {
+	symtable_t	sym_rt;		/* Run time symbols retrieved from crtools itself */
+
+	struct vma_area	*vma_to;	/* VMA where vDSO calls redirect to */
+	struct vma_area	*vma_from;	/* vDSO VMA of dumpee which we should patch */
+} vdso_proxy;
 
 static int shmem_remap(void *old_addr, void *new_addr, unsigned long size)
 {
@@ -265,7 +273,7 @@ static int map_private_vma(pid_t pid, struct vma_area *vma, void *tgt_addr,
 	return 0;
 }
 
-static int restore_priv_vma_content(pid_t pid)
+static int restore_priv_vma_content(pid_t pid, struct vdso_proxy_s *vdso_proxy)
 {
 	struct vma_area *vma;
 	int ret = 0;
@@ -381,6 +389,37 @@ static int restore_priv_vma_content(pid_t pid)
 		}
 	}
 
+	/*
+	 * Proxify vdso content.
+	 */
+	if (vdso_proxy->vma_from) {
+		symtable_t sym_from = SYMTABLE_INIT;
+		void *base_to, *base_from;
+
+		base_to = decode_pointer(vma_premmaped_start(&vdso_proxy->vma_to->vma));
+		base_from = decode_pointer(vma_premmaped_start(&vdso_proxy->vma_from->vma));
+
+		ret = arch_parse_vdso((void *)base_from,
+				      vma_area_len(vdso_proxy->vma_from),
+				      &sym_from);
+		if (ret)
+			return -1;
+
+		/*
+		 * Fill new vDSO with content of run-time vDSO
+		 */
+		pr_debug("vdso: Copy run-time contents %p -> %p\n",
+			 (void *)vdso_proxy->sym_rt.vma_start, base_to);
+
+		memcpy(base_to, (void *)vdso_proxy->sym_rt.vma_start,
+		       symtable_vma_size(&vdso_proxy->sym_rt));
+
+		if (arch_proxify_vdso(base_to, base_from,
+				      &vdso_proxy->sym_rt,
+				      &sym_from))
+			return -1;
+	}
+
 	pr_info("nr_restored_pages: %d\n", nr_restored);
 	pr_info("nr_shared_pages:   %d\n", nr_shared);
 	pr_info("nr_droped_pages:   %d\n", nr_droped);
@@ -415,6 +454,9 @@ static int read_vmas(int pid)
 		goto out;
 	}
 
+	vdso_proxy.vma_from = NULL;
+	vdso_proxy.vma_to = NULL;
+
 	while (1) {
 		struct vma_area *vma;
 		VmaEntry *e;
@@ -446,11 +488,58 @@ static int read_vmas(int pid)
 		if (!vma_priv(&vma->vma))
 			continue;
 
+		if (vma_entry_is(&vma->vma, VMA_AREA_VDSO)) {
+			pr_debug("vdso: Got dumpee area %lx-%lx\n",
+				 (long)vma->vma.start, (long)vma->vma.end);
+
+			vdso_proxy.vma_from = vma;
+		}
+
 		priv_size += vma_area_len(vma);
 	}
 
 	if (ret < 0)
 		goto out;
+
+	/*
+	 * FIXME At moment we lookup for last VMA present in image
+	 *       and append new VMA after it. This new VMA get filled
+	 *       with vDSO contents from run time vDSO data, but this
+	 *       is overkill.
+	 *
+	 *       - there might be no space after the last image VMA
+	 *       - even being small (typically 8K) vDSO should not be
+	 *         copied to a new place but rather remapped lately
+	 *         in restore last phase.
+	 *
+	 */
+	if (vdso_proxy.vma_from) {
+		struct vma_area *last;
+		struct vma_area *vma;
+
+		ret = -1;
+		vma = alloc_vma_area();
+		if (!vma)
+			goto out;
+
+		last = list_entry(rst_vmas.h.prev, struct vma_area, list);
+
+		vma->vma.start	= last->vma.end;
+		vma->vma.end	= vma->vma.start + symtable_vma_size(&vdso_proxy.sym_rt);
+		vma->vma.prot	= PROT_READ | PROT_EXEC;
+		vma->vma.flags	= MAP_PRIVATE | MAP_ANONYMOUS;
+		vma->vma.status	= VMA_AREA_REGULAR | VMA_AREA_VDSO | VMA_ANON_PRIVATE;
+
+		rst_vmas.nr++;
+		list_add_tail(&vma->list, &rst_vmas.h);
+
+		priv_size += vma_area_len(vma);
+
+		pr_debug("vdso: Add proxy area %lx-%lx\n",
+			 (long)vma->vma.start, (long)vma->vma.end);
+
+		vdso_proxy.vma_to = vma;
+	}
 
 	/* Reserve a place for mapping private vma-s one by one */
 	addr = mmap(NULL, priv_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
@@ -485,7 +574,7 @@ static int read_vmas(int pid)
 	}
 
 	if (ret == 0)
-		ret = restore_priv_vma_content(pid);
+		ret = restore_priv_vma_content(pid, &vdso_proxy);
 	close(fd);
 
 out:
@@ -1302,6 +1391,9 @@ int cr_restore_tasks(pid_t pid, struct cr_options *opts)
 		return -1;
 
 	if (cpu_init() < 0)
+		return -1;
+
+	if (arch_fill_self_vdso(&vdso_proxy.sym_rt))
 		return -1;
 
 	if (prepare_task_entries() < 0)
