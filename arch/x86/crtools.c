@@ -2,6 +2,8 @@
 #include <unistd.h>
 #include <elf.h>
 
+#include <sys/mman.h>
+
 #include "asm/processor-flags.h"
 #include "asm/types.h"
 #include "asm/fpu.h"
@@ -14,6 +16,7 @@
 #include "log.h"
 #include "util.h"
 #include "cpu.h"
+#include "vdso.h"
 
 #include "protobuf.h"
 #include "protobuf/core.pb-c.h"
@@ -104,6 +107,43 @@ int syscall_seized(struct parasite_ctl *ctl, int nr, unsigned long *ret,
 
 	*ret = regs.ax;
 	return 0;
+}
+
+int arch_fill_self_vdso(symtable_t *t)
+{
+	char buf[512];
+	int ret = -1;
+	FILE *maps;
+
+	maps = fopen("/proc/self/maps", "r");
+	if (!maps) {
+		pr_perror("Can't open self-vma");
+		return -1;
+	}
+
+	while (fgets(buf, sizeof(buf), maps)) {
+		unsigned long start, end;
+
+		if (strstr(buf, "[vdso]") == NULL)
+			continue;
+
+		ret = sscanf(buf, "%lx-%lx", &start, &end);
+		if (ret != 2) {
+			ret = -1;
+			pr_err("Can't find vDSO bounds\n");
+			break;
+		}
+
+		pr_debug("vdso: Got area %lx-%lx\n", start, end);
+
+		t->vma_start = start;
+		t->vma_end = end;
+		ret = arch_parse_vdso((void *)start, end - start, t);
+		break;
+	}
+
+	fclose(maps);
+	return ret;
 }
 
 int get_task_regs(pid_t pid, CoreEntry *core, const struct parasite_ctl *ctl)
