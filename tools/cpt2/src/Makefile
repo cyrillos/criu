@@ -15,6 +15,7 @@ obj-y	+= files.o
 obj-y	+= mm.o
 obj-y	+= tty.o
 obj-y	+= fsnotify.o
+obj-y	+= sig.o
 obj-y	+= ../../../arch/x86/vdso.o
 
 cflags-y += -iquote include

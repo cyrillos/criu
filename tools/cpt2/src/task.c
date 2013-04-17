@@ -18,6 +18,7 @@
 #include "obj.h"
 #include "bug.h"
 #include "net.h"
+#include "sig.h"
 #include "mm.h"
 #include "ns.h"
 
@@ -368,29 +369,6 @@ out:
 	close(fd);
 	return ret;
 }
-
-#define SIGMAX 64
-
-static int write_sighandlers(context_t *ctx, struct task_struct *t)
-{
-	SaEntry e = SA_ENTRY__INIT;
-	int ret = -1, fd = -1;
-	unsigned int i;
-
-	fd = open_image(ctx, CR_FD_SIGACT, O_DUMP, t->ti.cpt_pid);
-	if (fd < 0)
-		goto err;
-
-	for (i = 0; i < SIGMAX; i++) {
-		sa_entry__init(&e);
-		if (pb_write_one(fd, &e, PB_SIGACT) < 0)
-			goto err;
-	}
-
-	ret = 0;
-err:
-	close_safe(&fd);
-	return ret;}
 
 static int write_task_itimers(context_t *ctx, struct task_struct *t)
 {
