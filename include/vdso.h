@@ -32,11 +32,11 @@ typedef struct symbol_s {
 #define SYMBOL_INIT						\
 	{ .offset = VDSO_BAD_ADDR, }
 
-typedef struct symtable_s {
+struct symtable_s {
 	unsigned long	vma_start;
 	unsigned long	vma_end;
 	symbol_t	sym[VDSO_SYMBOL_MAX];
-} symtable_t;
+};
 
 #define symtable_vma_size(s)					\
 	(unsigned long)((s)->vma_end - (s)->vma_start)
