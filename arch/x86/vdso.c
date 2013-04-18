@@ -9,6 +9,7 @@
 #include "compiler.h"
 #include "xmalloc.h"
 #include "vdso.h"
+#include "log.h"
 
 #ifdef LOG_PREFIX
 #undef LOG_PREFIX
