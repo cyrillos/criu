@@ -15,12 +15,7 @@
 #endif
 
 extern unsigned int loglevel_get(void);
-
-#define print_on_level(level, fmt, ...)						\
-do {										\
-	if (level == LOG_MSG || level <= loglevel_get())			\
-		printf(fmt,  ##__VA_ARGS__);					\
-} while (0)
+extern void print_on_level(unsigned int loglevel, const char *format, ...);
 
 #define pr_msg(fmt, ...)							\
 	print_on_level(LOG_MSG,							\

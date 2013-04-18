@@ -1,5 +1,6 @@
 obj-y	+= main.o
 obj-y	+= convert.o
+obj-y	+= log.o
 obj-y	+= io.o
 obj-y	+= fdset.o
 obj-y	+= string.o
