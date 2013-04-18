@@ -12,86 +12,6 @@
 
 #include "protobuf/vma.pb-c.h"
 
-#define CR_FD_PERM		(S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH)
-
-enum {
-	CR_FD_INVENTORY,
-	/*
-	 * Task entries
-	 */
-
-	_CR_FD_TASK_FROM,
-	CR_FD_FILE_LOCKS,
-	CR_FD_CORE,
-	CR_FD_IDS,
-	CR_FD_MM,
-	CR_FD_VMAS,
-	CR_FD_SIGACT,
-	CR_FD_ITIMERS,
-	CR_FD_CREDS,
-	CR_FD_FS,
-	CR_FD_RLIMIT,
-	CR_FD_SIGNAL,
-	_CR_FD_TASK_TO,
-
-	CR_FD_PAGEMAP,
-
-	/*
-	 * NS entries
-	 */
-
-	_CR_FD_NS_FROM,
-	CR_FD_UTSNS,
-	CR_FD_IPCNS_VAR,
-	CR_FD_IPCNS_SHM,
-	CR_FD_IPCNS_MSG,
-	CR_FD_IPCNS_SEM,
-	CR_FD_MOUNTPOINTS,
-	CR_FD_NETDEV,
-	CR_FD_IFADDR,
-	CR_FD_ROUTE,
-	_CR_FD_NS_TO,
-
-	CR_FD_PSTREE,
-	CR_FD_SHMEM_PAGEMAP,
-	CR_FD_GHOST_FILE,
-	CR_FD_TCP_STREAM,
-	CR_FD_FDINFO,
-
-	_CR_FD_GLOB_FROM,
-	CR_FD_SK_QUEUES,
-	CR_FD_REG_FILES,
-	CR_FD_INETSK,
-	CR_FD_UNIXSK,
-	CR_FD_PACKETSK,
-	CR_FD_NETLINKSK,
-	CR_FD_PIPES,
-	CR_FD_PIPES_DATA,
-	CR_FD_FIFO,
-	CR_FD_FIFO_DATA,
-	CR_FD_TTY,
-	CR_FD_TTY_INFO,
-	CR_FD_REMAP_FPATH,
-	CR_FD_EVENTFD,
-	CR_FD_EVENTPOLL,
-	CR_FD_EVENTPOLL_TFD,
-	CR_FD_SIGNALFD,
-	CR_FD_INOTIFY,
-	CR_FD_INOTIFY_WD,
-	CR_FD_FANOTIFY,
-	CR_FD_FANOTIFY_MARK,
-	_CR_FD_GLOB_TO,
-
-	CR_FD_TMPFS,
-	CR_FD_PAGES,
-	CR_FD_PSIGNAL,
-
-	CR_FD_PAGES_OLD,
-	CR_FD_SHM_PAGES_OLD,
-
-	CR_FD_MAX
-};
-
 struct script {
 	struct list_head node;
 	char *path;
@@ -149,39 +69,6 @@ extern int close_service_fd(enum sfd_type type);
 extern bool is_service_fd(int fd, enum sfd_type type);
 extern bool is_any_service_fd(int fd);
 
-/* file descriptors template */
-struct cr_fd_desc_tmpl {
-	const char	*fmt;			/* format for the name */
-	u32		magic;			/* magic in the header */
-	void		(*show)(int fd, struct cr_options *o);
-};
-
-void show_files(int fd_files, struct cr_options *o);
-void show_pagemap(int fd, struct cr_options *o);
-void show_reg_files(int fd_reg_files, struct cr_options *o);
-void show_core(int fd_core, struct cr_options *o);
-void show_ids(int fd_ids, struct cr_options *o);
-void show_mm(int fd_mm, struct cr_options *o);
-void show_vmas(int fd_vma, struct cr_options *o);
-void show_pipes(int fd_pipes, struct cr_options *o);
-void show_pipes_data(int fd_pipes, struct cr_options *o);
-void show_fifo(int fd, struct cr_options *o);
-void show_fifo_data(int fd_pipes, struct cr_options *o);
-void show_pstree(int fd_pstree, struct cr_options *o);
-void show_sigacts(int fd_sigacts, struct cr_options *o);
-void show_siginfo(int fd, struct cr_options *o);
-void show_itimers(int fd, struct cr_options *o);
-void show_creds(int fd, struct cr_options *o);
-void show_fs(int fd, struct cr_options *o);
-void show_remap_files(int fd, struct cr_options *o);
-void show_ghost_file(int fd, struct cr_options *o);
-void show_fown_cont(void *p);
-void show_eventfds(int fd, struct cr_options *o);
-void show_tty(int fd, struct cr_options *o);
-void show_tty_info(int fd, struct cr_options *o);
-void show_file_locks(int fd, struct cr_options *o);
-void show_rlimit(int fd, struct cr_options *o);
-
 int check_img_inventory(void);
 int write_img_inventory(void);
 void kill_inventory(void);
@@ -227,10 +114,6 @@ int cr_show(struct cr_options *opts, int pid);
 int convert_to_elf(char *elf_path, int fd_core);
 int cr_check(void);
 int cr_exec(int pid, char **opts);
-
-#define O_DUMP	(O_RDWR | O_CREAT | O_EXCL)
-#define O_SHOW	(O_RDONLY)
-#define O_RSTR	(O_RDONLY)
 
 struct cr_fdset *cr_task_fdset_open(int pid, int mode);
 struct cr_fdset *cr_ns_fdset_open(int pid, int mode);

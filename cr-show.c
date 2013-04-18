@@ -23,6 +23,7 @@
 #include "uts_ns.h"
 #include "ipc_ns.h"
 #include "pstree.h"
+#include "cr-show.h"
 
 #include "protobuf.h"
 #include "protobuf/fdinfo.pb-c.h"
@@ -136,6 +137,15 @@ void show_rlimit(int fd, struct cr_options *o)
 {
 	pb_show_plain(fd, PB_RLIMIT);
 }
+
+void show_inventory(int fd, struct cr_options *o)
+{
+	pb_show_vertical(fd, PB_INVENTORY);
+}
+
+void show_raw_image(int fd, struct cr_options *opt)
+{
+};
 
 static int nice_width_for(unsigned long addr)
 {

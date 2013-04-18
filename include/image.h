@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include "compiler.h"
+#include "image-defs.h"
 #include "magic.h"
 
 #define PAGE_IMAGE_SIZE	4096
