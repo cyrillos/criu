@@ -113,27 +113,27 @@ int convert(void)
 
 	ctx.dfd = open(global_opts.criu_dirname, O_RDONLY);
 	if (ctx.dfd < 0) {
-		pr_perror("Can't open directory %s\n",
+		pr_perror("Can't open directory %s",
 			  global_opts.criu_dirname);
 		goto out;
 	}
 
 	ctx.fd = open(global_opts.cpt_filename, O_RDONLY);
 	if (ctx.fd < 0) {
-		pr_perror("Can't open checkpoint file %s\n",
+		pr_perror("Can't open checkpoint file %s",
 			  global_opts.cpt_filename);
 		goto out;
 	}
 
 	ctx.rootfd = open(global_opts.root_dirname, O_RDONLY);
 	if (ctx.rootfd < 0) {
-		pr_perror("Can't open container root %s\n",
+		pr_perror("Can't open container root %s",
 			  global_opts.root_dirname);
 		goto out;
 	}
 
 	if (fstat(ctx.rootfd, &ctx.stroot)) {
-		pr_perror("Can't obtaine statistics on container root %s\n",
+		pr_perror("Can't obtaine statistics on container root %s",
 			  global_opts.root_dirname);
 		goto out;
 
