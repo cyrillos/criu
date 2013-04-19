@@ -109,7 +109,7 @@ int convert(void)
 	int ret = -1;
 
 	context_init(&ctx);
-	pb_init();
+	cr_pb_init();
 
 	ctx.dfd = open(global_opts.criu_dirname, O_RDONLY);
 	if (ctx.dfd < 0) {

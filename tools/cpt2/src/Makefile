@@ -18,6 +18,8 @@ obj-y	+= tty.o
 obj-y	+= fsnotify.o
 obj-y	+= sig.o
 obj-y	+= ../../../arch/x86/vdso.o
+obj-y	+= ../../../image-defs.o
+obj-y	+= ../../../protobuf-defs.o
 
 cflags-y += -iquote include
 

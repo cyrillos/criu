@@ -9,69 +9,59 @@
 
 #include <linux/limits.h>
 
+#include "compiler.h"
 #include "image.h"
 
-#define FD_ENTRY(_name, _fmt)			\
-	[CR_FD_##_name] = {			\
-		.fmt	= _fmt ".img",		\
-		.magic	= _name##_MAGIC,	\
-	}
+#define GEN_DUMMY_SHOW(_name)			\
+	void _name(int fd, struct cr_options *o) { }
 
-struct cr_fd_desc_tmpl template[CR_FD_MAX] = {
-	FD_ENTRY(INVENTORY,		"inventory"),
-	FD_ENTRY(FDINFO,		"fdinfo-%d"),
-	FD_ENTRY(PAGEMAP,		"pagemap-%ld"),
-	FD_ENTRY(SHMEM_PAGEMAP,		"pagemap-shmem-%ld"),
-	FD_ENTRY(REG_FILES,		"reg-files"),
-	FD_ENTRY(EVENTFD,		"eventfd"),
-	FD_ENTRY(EVENTPOLL,		"eventpoll"),
-	FD_ENTRY(EVENTPOLL_TFD,		"eventpoll-tfd"),
-	FD_ENTRY(SIGNALFD,		"signalfd"),
-	FD_ENTRY(INOTIFY,		"inotify"),
-	FD_ENTRY(INOTIFY_WD,		"inotify-wd"),
-	FD_ENTRY(FANOTIFY,		"fanotify"),
-	FD_ENTRY(FANOTIFY_MARK,		"fanotify-mark"),
-	FD_ENTRY(CORE,			"core-%d"),
-	FD_ENTRY(IDS,			"ids-%d"),
-	FD_ENTRY(MM,			"mm-%d"),
-	FD_ENTRY(VMAS,			"vmas-%d"),
-	FD_ENTRY(PIPES,			"pipes"),
-	FD_ENTRY(PIPES_DATA,		"pipes-data"),
-	FD_ENTRY(FIFO,			"fifo"),
-	FD_ENTRY(FIFO_DATA,		"fifo-data"),
-	FD_ENTRY(PSTREE,		"pstree"),
-	FD_ENTRY(SIGACT,		"sigacts-%d"),
-	FD_ENTRY(UNIXSK,		"unixsk"),
-	FD_ENTRY(INETSK,		"inetsk"),
-	FD_ENTRY(PACKETSK,		"packetsk"),
-	FD_ENTRY(NETLINKSK,		"netlinksk"),
-	FD_ENTRY(SK_QUEUES,		"sk-queues"),
-	FD_ENTRY(ITIMERS,		"itimers-%d"),
-	FD_ENTRY(CREDS,			"creds-%d"),
-	FD_ENTRY(UTSNS,			"utsns-%d"),
-	FD_ENTRY(IPCNS_VAR,		"ipcns-var-%d"),
-	FD_ENTRY(IPCNS_SHM,		"ipcns-shm-%d"),
-	FD_ENTRY(IPCNS_MSG,		"ipcns-msg-%d"),
-	FD_ENTRY(IPCNS_SEM,		"ipcns-sem-%d"),
-	FD_ENTRY(FS,			"fs-%d"),
-	FD_ENTRY(REMAP_FPATH,		"remap-fpath"),
-	FD_ENTRY(GHOST_FILE,		"ghost-file-%x"),
-	FD_ENTRY(TCP_STREAM,		"tcp-stream-%x"),
-	FD_ENTRY(MOUNTPOINTS,		"mountpoints-%d"),
-	FD_ENTRY(NETDEV,		"netdev-%d"),
-	FD_ENTRY(IFADDR,		"ifaddr-%d"),
-	FD_ENTRY(ROUTE,			"route-%d"),
-	FD_ENTRY(TMPFS,			"tmpfs-%d.tar.gz"),
-	FD_ENTRY(TTY,			"tty"),
-	FD_ENTRY(TTY_INFO,		"tty-info"),
-	FD_ENTRY(FILE_LOCKS,		"filelocks-%d"),
-	FD_ENTRY(RLIMIT,		"rlimit"),
-	FD_ENTRY(PAGES,			"pages-%u"),
-	FD_ENTRY(PAGES_OLD,		"pages-%d"),
-	FD_ENTRY(SHM_PAGES_OLD,		"pages-shmem-%ld"),
-	FD_ENTRY(SIGNAL,		"signal-s-%d"),
-	FD_ENTRY(PSIGNAL,		"signal-p-%d"),
-};
+GEN_DUMMY_SHOW(show_inventory);
+GEN_DUMMY_SHOW(show_files);
+GEN_DUMMY_SHOW(show_pagemap);
+GEN_DUMMY_SHOW(show_reg_files);
+GEN_DUMMY_SHOW(show_eventfds);
+GEN_DUMMY_SHOW(show_eventpoll);
+GEN_DUMMY_SHOW(show_eventpoll_tfd);
+GEN_DUMMY_SHOW(show_signalfd);
+
+GEN_DUMMY_SHOW(show_inotify);
+GEN_DUMMY_SHOW(show_inotify_wd);
+GEN_DUMMY_SHOW(show_fanotify);
+GEN_DUMMY_SHOW(show_fanotify_mark);
+GEN_DUMMY_SHOW(show_core);
+GEN_DUMMY_SHOW(show_ids);
+GEN_DUMMY_SHOW(show_mm);
+GEN_DUMMY_SHOW(show_vmas);
+GEN_DUMMY_SHOW(show_pipes);
+GEN_DUMMY_SHOW(show_pipes_data);
+GEN_DUMMY_SHOW(show_fifo);
+GEN_DUMMY_SHOW(show_fifo_data);
+GEN_DUMMY_SHOW(show_pstree);
+GEN_DUMMY_SHOW(show_sigacts);
+GEN_DUMMY_SHOW(show_unixsk);
+GEN_DUMMY_SHOW(show_inetsk);
+GEN_DUMMY_SHOW(show_packetsk);
+GEN_DUMMY_SHOW(show_netlinksk);
+GEN_DUMMY_SHOW(show_sk_queues);
+GEN_DUMMY_SHOW(show_itimers);
+GEN_DUMMY_SHOW(show_creds);
+GEN_DUMMY_SHOW(show_utsns);
+GEN_DUMMY_SHOW(show_ipc_var);
+GEN_DUMMY_SHOW(show_ipc_shm);
+GEN_DUMMY_SHOW(show_ipc_msg);
+GEN_DUMMY_SHOW(show_ipc_sem);
+GEN_DUMMY_SHOW(show_fs);
+GEN_DUMMY_SHOW(show_remap_files);
+GEN_DUMMY_SHOW(show_ghost_file);
+GEN_DUMMY_SHOW(show_tcp_stream);
+GEN_DUMMY_SHOW(show_mountpoints);
+GEN_DUMMY_SHOW(show_netdevices);
+GEN_DUMMY_SHOW(show_raw_image);
+GEN_DUMMY_SHOW(show_tty);
+GEN_DUMMY_SHOW(show_tty_info);
+GEN_DUMMY_SHOW(show_file_locks);
+GEN_DUMMY_SHOW(show_rlimit);
+GEN_DUMMY_SHOW(show_siginfo);
 
 int open_image(context_t *ctx, int type, int flags, ...)
 {
@@ -80,7 +70,7 @@ int open_image(context_t *ctx, int type, int flags, ...)
 	int ret = -1;
 
 	va_start(args, flags);
-	vsnprintf(path, PATH_MAX, template[type].fmt, args);
+	vsnprintf(path, PATH_MAX, fdset_template[type].fmt, args);
 	va_end(args);
 
 	if (flags & O_EXCL) {
@@ -97,7 +87,7 @@ int open_image(context_t *ctx, int type, int flags, ...)
 		goto err;
 	}
 
-	if (template[type].magic == RAW_IMAGE_MAGIC)
+	if (fdset_template[type].magic == RAW_IMAGE_MAGIC)
 		goto skip_magic;
 
 	if (flags == O_RDONLY) {
@@ -105,12 +95,12 @@ int open_image(context_t *ctx, int type, int flags, ...)
 
 		if (read_img(ret, &magic) < 0)
 			goto err;
-		if (magic != template[type].magic) {
+		if (magic != fdset_template[type].magic) {
 			pr_err("Magic doesn't match for %s\n", path);
 			goto err;
 		}
 	} else {
-		if (write_img(ret, &template[type].magic))
+		if (write_img(ret, &fdset_template[type].magic))
 			goto err;
 	}
 
