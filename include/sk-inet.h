@@ -17,6 +17,10 @@
 #define TCP_REPAIR_OPTIONS	22
 #endif
 
+#ifndef TCP_REPAIR_STATE
+#define TCP_REPAIR_STATE	26
+#endif
+
 struct inet_sk_desc {
 	struct socket_desc	sd;
 	unsigned int		type;

@@ -333,10 +333,27 @@ static int dump_tcp_conn_state(struct inet_sk_desc *sk)
 	tse.outq_len = sk->wqlen;
 	tse.unsq_len = sk->uwqlen;
 	tse.has_unsq_len = true;
+
+	/* Don't account the fin packet. It doesn't countain real data. */
+	if (sk->state == TCP_FIN_WAIT1 ||
+	    sk->state == TCP_LAST_ACK ||
+	    sk->state == TCP_CLOSING) {
+		BUG_ON(tse.outq_len == 0);
+		tse.outq_len--;
+		tse.unsq_len = tse.unsq_len ? tse.unsq_len - 1 : 0;
+	}
+
 	ret = tcp_stream_get_queue(sk->rfd, TCP_SEND_QUEUE,
 			&tse.outq_seq, tse.outq_len, &out_buf);
 	if (ret < 0)
 		goto err_out;
+
+	/* outq_seq is adjusted due to not accointing the fin packet */
+	if (sk->state == TCP_FIN_WAIT1 ||
+	    sk->state == TCP_FIN_WAIT2 ||
+	    sk->state == TCP_LAST_ACK ||
+	    sk->state == TCP_CLOSING)
+		tse.outq_seq--;
 
 	/*
 	 * Initial options
@@ -590,6 +607,7 @@ static int restore_tcp_conn_state(int sk, struct inet_sk_info *ii)
 {
 	int ifd, aux;
 	TcpStreamEntry *tse;
+	int val;
 
 	pr_info("Restoring TCP connection id %x ino %x\n", ii->ie->id, ii->ie->ino);
 
@@ -625,6 +643,12 @@ static int restore_tcp_conn_state(int sk, struct inet_sk_info *ii)
 		aux = 1;
 		if (restore_opt(sk, SOL_TCP, TCP_CORK, &aux))
 			goto err_c;
+	}
+
+	val = ii->ie->state;
+	if (setsockopt(sk, SOL_TCP, TCP_REPAIR_STATE, &val, sizeof(val)) < 0) {
+		pr_perror("Can't set repair state");
+		return -1;
 	}
 
 	tcp_stream_entry__free_unpacked(tse, NULL);

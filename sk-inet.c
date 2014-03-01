@@ -93,13 +93,13 @@ static int can_dump_inet_sk(const struct inet_sk_desc *sk, int proto)
 {
 	BUG_ON((sk->sd.family != AF_INET) && (sk->sd.family != AF_INET6));
 
-	if (sk->shutdown) {
-		pr_err("Can't dump shutdown inet socket %x\n",
-				sk->sd.ino);
-		return 0;
-	}
-
 	if (sk->type == SOCK_DGRAM) {
+		if (sk->shutdown) {
+			pr_err("Can't dump shutdown inet socket %x\n",
+					sk->sd.ino);
+			return 0;
+		}
+
 		if (sk->wqlen != 0) {
 			pr_err("Can't dump corked dgram socket %x\n",
 					sk->sd.ino);
