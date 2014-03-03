@@ -58,6 +58,8 @@ TST_NOFILE	=				\
 		socket-tcpbuf			\
 		socket-tcpbuf-local		\
 		socket-tcpbuf6			\
+		socket-tcp-fin-wait1		\
+		socket-tcp-fin-wait2		\
 		sock_opts00			\
 		sock_opts01			\
 		sk-unix-unconn			\
@@ -277,6 +279,9 @@ socket-tcpbuf6: override CFLAGS += -D ZDTM_IPV6
 socket-tcpbuf-local: override CFLAGS += -D ZDTM_TCP_LOCAL
 socket_listen6: override CFLAGS += -D ZDTM_IPV6
 sigpending:		override LDLIBS += -lrt
+
+socket-tcp-fin-wait1:	override CFLAGS += -D ZDTM_TCP_FIN_WAIT1
+socket-tcp-fin-wait2:	override CFLAGS += -D ZDTM_TCP_FIN_WAIT2
 
 $(LIB):	force
 	$(Q) $(MAKE) -C $(LIBDIR)
