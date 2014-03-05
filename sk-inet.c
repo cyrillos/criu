@@ -134,6 +134,11 @@ static int can_dump_inet_sk(const struct inet_sk_desc *sk, int proto)
 		}
 		break;
 	case TCP_ESTABLISHED:
+	case TCP_FIN_WAIT2:
+	case TCP_FIN_WAIT1:
+	case TCP_CLOSE_WAIT:
+	case TCP_LAST_ACK:
+	case TCP_CLOSING:
 		if (!opts.tcp_established_ok) {
 			pr_err("Connected TCP socket, consider using %s option.\n",
 					SK_EST_PARAM);
@@ -381,7 +386,13 @@ static struct file_desc_ops inet_desc_ops = {
 
 static inline int tcp_connection(InetSkEntry *ie)
 {
-	return (ie->proto == IPPROTO_TCP) && (ie->state == TCP_ESTABLISHED);
+	return ie->proto == IPPROTO_TCP &&
+			(ie->state == TCP_ESTABLISHED ||
+			 ie->state == TCP_FIN_WAIT1   ||
+			 ie->state == TCP_FIN_WAIT2   ||
+			 ie->state == TCP_CLOSE_WAIT  ||
+			 ie->state == TCP_LAST_ACK    ||
+			 ie->state == TCP_CLOSING);
 }
 
 static int collect_one_inetsk(void *o, ProtobufCMessage *base)

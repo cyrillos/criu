@@ -557,7 +557,10 @@ int collect_sockets(int pid)
 	req.r.i.sdiag_protocol	= IPPROTO_TCP;
 	req.r.i.idiag_ext	= 0;
 	/* Only listening and established sockets supported yet */
-	req.r.i.idiag_states	= (1 << TCP_LISTEN) | (1 << TCP_ESTABLISHED);
+	req.r.i.idiag_states	= (1 << TCP_LISTEN) | (1 << TCP_ESTABLISHED) |
+					(1 << TCP_FIN_WAIT1) | (1 << TCP_FIN_WAIT2) |
+					(1 << TCP_CLOSE_WAIT) | (1 << TCP_LAST_ACK) |
+					(1 << TCP_CLOSING);
 	tmp = do_collect_req(nl, &req, sizeof(req), inet_receive_one, &req.r.i);
 	if (tmp)
 		err = tmp;
@@ -693,6 +696,16 @@ char *skstate2s(u32 state)
 		return "closed";
 	else if (state == TCP_LISTEN)
 		return "listen";
+	else if (state == TCP_FIN_WAIT1)
+		return "fin-wait1";
+	else if (state == TCP_FIN_WAIT2)
+		return "fin-wait2";
+	else if (state == TCP_CLOSE_WAIT)
+		return "close-wait";
+	else if (state == TCP_LAST_ACK)
+		return "last-ack";
+	else if (state == TCP_LAST_ACK)
+		return "closing";
 	else
 		return unknown(state);
 }
