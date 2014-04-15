@@ -22,6 +22,7 @@
 #include "util.h"
 #include "fs-magic.h"
 #include "asm/atomic.h"
+#include "namespaces.h"
 
 #include "protobuf.h"
 #include "protobuf/regfile.pb-c.h"
@@ -556,6 +557,11 @@ int dump_one_reg_file(int lfd, u32 id, const struct fd_parms *p)
 		link = &_link;
 	} else
 		link = p->link;
+
+	if (p->mnt_id >= 0 && (root_ns_mask & CLONE_NEWNS)) {
+		rfe.mnt_id = p->mnt_id;
+		rfe.has_mnt_id = true;
+	}
 
 	pr_info("Dumping path for %d fd via self %d [%s]\n",
 			p->fd, lfd, &link->name[1]);
