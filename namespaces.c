@@ -11,6 +11,7 @@
 #include "mount.h"
 #include "pstree.h"
 #include "namespaces.h"
+#include "proc_parse.h"
 #include "net.h"
 
 #include "protobuf.h"
