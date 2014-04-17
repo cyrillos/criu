@@ -31,13 +31,6 @@
  * Single linked list of mount points get from proc/images
  */
 struct mount_info *mntinfo;
-/*
- * Tree of mount points. When required is generated from
- * the mntinfo list. Tree elements are sorted, so that it
- * represents the real FS visibility and is thus suitable
- * for umounting or path resolution.
- */
-static struct mount_info *mntinfo_tree;
 
 static int open_mountpoint(struct mount_info *pm);
 
@@ -81,31 +74,6 @@ int open_mount(unsigned int s_dev)
 	return -ENOENT;
 }
 
-int collect_mount_info(pid_t pid)
-{
-	pr_info("Collecting mountinfo\n");
-
-	mntinfo = parse_mountinfo(pid, NULL);
-	if (!mntinfo) {
-		pr_err("Parsing mountinfo %d failed\n", getpid());
-		return -1;
-	}
-
-	/*
-	 * Build proper tree in any case -- for NEWNS one we'll use
-	 * it for old NS clean, otherwise we'll use the tree for
-	 * path resolution (btrfs stat workaround).
-	 */
-
-	mntinfo_tree = mnt_build_tree(mntinfo);
-	if (!mntinfo_tree) {
-		pr_err("Building mount tree %d failed\n", getpid());
-		return -1;
-	}
-
-	return 0;
-}
-
 static struct mount_info *__lookup_mnt_id(struct mount_info *list, int id)
 {
 	struct mount_info *m;
@@ -133,7 +101,7 @@ struct mount_info *lookup_mnt_sdev(unsigned int s_dev)
 	return NULL;
 }
 
-static struct mount_info *mount_resolve_path(const char *path)
+static struct mount_info *mount_resolve_path(struct mount_info *mntinfo_tree, const char *path)
 {
 	size_t pathlen = strlen(path);
 	struct mount_info *m = mntinfo_tree, *c;
@@ -162,11 +130,12 @@ static struct mount_info *mount_resolve_path(const char *path)
 	return m;
 }
 
-dev_t phys_stat_resolve_dev(dev_t st_dev, const char *path)
+dev_t phys_stat_resolve_dev(struct mount_info *tree,
+				dev_t st_dev, const char *path)
 {
 	struct mount_info *m;
 
-	m = mount_resolve_path(path);
+	m = mount_resolve_path(tree, path);
 	/*
 	 * BTRFS returns subvolume dev-id instead of
 	 * superblock dev-id, in such case return device
@@ -176,12 +145,13 @@ dev_t phys_stat_resolve_dev(dev_t st_dev, const char *path)
 		MKKDEV(MAJOR(st_dev), MINOR(st_dev)) : m->s_dev;
 }
 
-bool phys_stat_dev_match(dev_t st_dev, dev_t phys_dev, const char *path)
+bool phys_stat_dev_match(struct mount_info *tree, dev_t st_dev,
+				dev_t phys_dev, const char *path)
 {
 	if (st_dev == kdev_to_odev(phys_dev))
 		return true;
 
-	return phys_dev == phys_stat_resolve_dev(st_dev, path);
+	return phys_dev == phys_stat_resolve_dev(tree, st_dev, path);
 }
 
 /*
@@ -878,6 +848,13 @@ int dump_mnt_ns(struct ns_id *ns)
 		if (dump_one_mountpoint(pm, img_fd))
 			goto err;
 
+	if (mntinfo == NULL)
+		mntinfo = pms;
+	else {
+		for (pm = mntinfo; pm->next != NULL; pm = pm->next);
+
+		pm->next = pms;
+	}
 	ret = 0;
 err:
 	close(img_fd);
@@ -1430,7 +1407,8 @@ int rst_collect_local_mntns()
 	nsid->pid = getpid();
 	futex_set(&nsid->created, 1);
 
-	if (collect_mntinfo(nsid) == NULL)
+	mntinfo = collect_mntinfo(nsid);
+	if (mntinfo == NULL)
 		return -1;
 
 	nsid->next = ns_ids;
@@ -1550,6 +1528,10 @@ static struct mount_info *read_mnt_ns_img()
 
 		nsid = nsid->next;
 	}
+
+	/* Here is not matter where the mount list is saved */
+	mntinfo = pms;
+
 	return pms;
 err:
 	return NULL;
@@ -1658,20 +1640,16 @@ static int populate_mnt_ns(int ns_pid, struct mount_info *mis)
 {
 	struct mount_info *pms;
 
-	mntinfo_tree = NULL;
-	mntinfo = mis;
-
 	if (prepare_temporary_roots())
 		return -1;
 
-	pms = mnt_build_tree(mntinfo);
+	pms = mnt_build_tree(mis);
 	if (!pms)
 		return -1;
 
 	if (validate_mounts(pms, false))
 		return -1;
 
-	mntinfo_tree = pms;
 	return mnt_tree_for_each(pms, do_mount_one);
 }
 
@@ -1739,7 +1717,7 @@ int prepare_mnt_ns(int ns_pid)
 		struct mount_info *mi;
 
 		/* moving a mount residing under a shared mount is invalid. */
-		mi = mount_resolve_path(opts.root);
+		mi = mount_resolve_path(ns.mnt.mntinfo_tree, opts.root);
 		if (mi == NULL) {
 			pr_err("Unable to find mount point for %s\n", opts.root);
 			return -1;
@@ -1854,14 +1832,15 @@ struct ns_id *lookup_nsid_by_mnt_id(int mnt_id)
 
 int collect_mnt_namespaces(void)
 {
-	struct mount_info *pm;
+	struct mount_info *pm, *pms;
 	struct ns_id *ns;
 	int ret = -1;
 
 	for (ns = ns_ids; ns; ns = ns->next) {
 		if (ns->pid == getpid()) {
 			if (!(root_ns_mask & CLONE_NEWNS)) {
-				if (collect_mntinfo(ns) == NULL)
+				mntinfo = collect_mntinfo(ns);
+				if (mntinfo == NULL)
 					return -1;
 			}
 			/* Skip current namespaces, which are in the list too  */
@@ -1873,9 +1852,17 @@ int collect_mnt_namespaces(void)
 
 		pr_info("Dump MNT namespace (mountpoints) %d via %d\n",
 				ns->id, ns->pid);
-		pm = collect_mntinfo(ns);
-		if (pm == NULL)
+		pms = collect_mntinfo(ns);
+		if (pms == NULL)
 			goto err;
+
+		if (mntinfo == NULL)
+			mntinfo = pms;
+		else {
+			for (pm = mntinfo; pm->next != NULL; pm = pm->next);
+
+			pm->next = pms;
+		}
 	}
 	ret = 0;
 err:
@@ -1891,7 +1878,8 @@ int dump_mnt_namespaces(void)
 		/* Skip current namespaces, which are in the list too  */
 		if (ns->pid == getpid()) {
 			if (!(root_ns_mask & CLONE_NEWNS))
-				if (collect_mntinfo(ns) == NULL)
+				mntinfo = collect_mntinfo(ns);
+				if (mntinfo == NULL)
 					return -1;
 			continue;
 		}
