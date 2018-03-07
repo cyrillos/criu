@@ -1562,3 +1562,68 @@ void print_stack_trace(pid_t pid)
 	free(strings);
 }
 #endif
+
+/*
+ * When reading symlinks via /proc/$pid/root/
+ * we should make sure the path resolving is done
+ * via root as toplevel root, otherwive path
+ * may be screwed.
+ *
+ * IOW, for any path resolving via /proc/$pid/root
+ * use this helper, and call cr_restore_root once
+ * you're done.
+ */
+int cr_set_root(int fd, int *old_root)
+{
+	int errno_save = errno;
+	int cwd = -1, old = -1;
+
+	if (old_root) {
+		old = open("/", O_PATH);
+		if (old < 0) {
+			pr_perror("Unable to open /");
+			return -1;
+		}
+	}
+
+	cwd = open(".", O_PATH);
+	if (cwd < 0)
+		goto err;
+
+	/* implement fchroot() */
+	if (fchdir(fd)) {
+		pr_perror("Unable to chdir");
+		goto err;
+	}
+	if (chroot(".")) {
+		pr_perror("Unable to chroot");
+		goto err;
+	}
+	if (fchdir(cwd)) {
+		pr_perror("Unable to restore cwd\n");
+		goto err;
+	}
+
+	close(cwd);
+
+	if (old_root)
+		*old_root = old;
+
+	errno = errno_save;
+	return 0;
+err:
+	close_safe(&cwd);
+	close_safe(&old);
+	errno = errno_save;
+	return -1;
+}
+
+int cr_restore_root(int root)
+{
+	int ret;
+
+	ret = cr_set_root(root, NULL);
+	close(root);
+
+	return ret;
+}
