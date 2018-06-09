@@ -257,6 +257,9 @@ static int crtools_prepare_shared(void)
 	if (prepare_cgroup())
 		return -1;
 
+	if (unix_prepare_shared())
+		return -1;
+
 	return 0;
 }
 
