@@ -2034,6 +2034,12 @@ static int init_unix_sk_info(struct unix_sk_info *ui, UnixSkEntry *ue)
 	ui->is_connected	= 0;
 	ui->peer_queue_restored = 0;
 
+	/* Compatibility with old images */
+	if (ui->ue->has_old_mnt_id) {
+		ui->ue->has_mnt_id = true;
+		ui->ue->mnt_id = ui->ue->old_mnt_id;
+	}
+
 	memzero(&ui->peer_resolve, sizeof(ui->peer_resolve));
 	memzero(&ui->d, sizeof(ui->d));
 
