@@ -28,6 +28,7 @@
 #include "external.h"
 #include "clone-noasan.h"
 #include "fdstore.h"
+#include "sockets.h"
 
 #include "images/mnt.pb-c.h"
 
@@ -2273,6 +2274,12 @@ do_bind:
 			       (int)st.st_mode, root);
 			goto err;
 		}
+	}
+
+	if (unix_prepare_bindmount(mi)) {
+		pr_err("Failed to prepare bindmount on unix at %s\n",
+		       mi->mountpoint);
+		goto err;
 	}
 
 	if (mount(root, mi->mountpoint, NULL, MS_BIND | (mi->flags & MS_REC), NULL) < 0) {
