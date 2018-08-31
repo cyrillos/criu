@@ -340,6 +340,7 @@ TST_DIR		=				\
 		shared_slave_mount_children	\
 		non_uniform_share_propagation	\
 		private_bind_propagation	\
+		pty05				\
 
 TST_DIR_FILE	=				\
 		chroot				\
