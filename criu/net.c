@@ -41,6 +41,9 @@
 #include "protobuf.h"
 #include "images/netdev.pb-c.h"
 
+#undef	LOG_PREFIX
+#define LOG_PREFIX "net: "
+
 #ifndef IFLA_LINK_NETNSID
 #define IFLA_LINK_NETNSID	37
 #undef IFLA_MAX
