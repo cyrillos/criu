@@ -1925,7 +1925,7 @@ static int make_socket(struct unix_sk_info *ui, int sks[2], bool pair, bool disj
 		}
 	}
 
-	if (disjoin_master && pair)
+	if (disjoin_master)
 		return break_connected(ui, sks[0]);
 
 	return 0;
