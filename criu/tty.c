@@ -734,7 +734,7 @@ static int __pty_open_ptmx_index(int index, int flags,
 		pr_debug("\t\tptmx opened with index %d\n", cur_idx);
 
 		if (cur_idx == index) {
-			pr_info("ptmx opened with index %d\n", cur_idx);
+			pr_debug("ptmx opened with index %d\n", cur_idx);
 			ret = fds[i];
 			fds[i] = -1;
 			break;
@@ -908,7 +908,7 @@ static bool tty_has_active_pair(struct tty_info *info, unsigned long *bitmap)
 	return test_bit(bit, bitmap);
 }
 
-static void tty_show_pty_info(char *prefix, struct tty_info *info)
+static void tty_show_pty(char *prefix, struct tty_info *info)
 {
 	int index = -1;
 	struct tty_driver *driver = info->driver;
@@ -918,9 +918,9 @@ static void tty_show_pty_info(char *prefix, struct tty_info *info)
 	else
 		index = driver->index;
 
-	pr_info("%s driver %s id %#x index %d (master %d sid %d pgrp %d inherit %d)\n",
-		prefix, info->driver->name, info->tfe->id, index,
-		tty_is_master(info), info->tie->sid, info->tie->pgrp, info->inherit);
+	pr_debug("%s driver %s id %#x index %d (master %d sid %d pgrp %d inherit %d)\n",
+		 prefix, info->driver->name, info->tfe->id, index,
+		 tty_is_master(info), info->tie->sid, info->tie->pgrp, info->inherit);
 }
 
 struct tty_parms {
@@ -1316,7 +1316,7 @@ static int tty_open(struct file_desc *d, int *new_fd)
 	struct tty_info *info = container_of(d, struct tty_info, d);
 	int ret;
 
-	tty_show_pty_info("open", info);
+	tty_show_pty("open", info);
 
 	if (!info->create)
 		return receive_tty(info, new_fd);
@@ -1717,9 +1717,9 @@ static int tty_setup_slavery(void)
 	 * Print out information about peers.
 	 */
 	list_for_each_entry(info, &all_ttys, list) {
-		tty_show_pty_info("head", info);
+		tty_show_pty("head", info);
 		list_for_each_entry(peer, &info->sibling, sibling)
-			tty_show_pty_info("    `- sibling", peer);
+			tty_show_pty("    `- sibling", peer);
 	}
 
 	return tty_setup_orphan_slavery();
@@ -1787,6 +1787,12 @@ static int collect_one_tty_info_entry(void *obj, ProtobufCMessage *msg, struct c
 		tie->has_mnt_id = true;
 		tie->mnt_id = 0;
 	}
+
+	pr_debug("collect tty info id %#x type %d sid %u pgrp %u "
+		 "rdev %u dev %u uid %u gid %u mnt_id %u\n",
+		 tie->id, tie->type, tie->sid, tie->pgrp,
+		 tie->rdev, tie->dev, tie->uid, tie->gid,
+		 tie->mnt_id);
 
 	switch (tie->type) {
 	case TTY_TYPE__PTY:
@@ -1885,6 +1891,11 @@ static int collect_one_tty(void *obj, ProtobufCMessage *msg, struct cr_img *i)
 		info->tfe->has_mnt_id = true;
 		info->tfe->mnt_id = 0;
 	}
+
+	pr_debug("collect tty file id %#x tty_info_id %x mnt_id %u regf_id %u\n",
+		 info->tfe->id, info->tfe->tty_info_id,
+		 info->tfe->mnt_id, info->tfe->regf_id);
+
 	if (info->tfe->tty_info_id > ((MAX_TTYS << 1))) {
 		pr_err("Too big index %u\n", info->tfe->tty_info_id);
 		return -1;
@@ -1965,8 +1976,8 @@ static int collect_one_tty_data(void *obj, ProtobufCMessage *msg, struct cr_img 
 		tdo->tde->mnt_id = 0;
 	}
 
-	pr_debug("Collected data for id %#x (size %zu bytes)\n",
-		 tdo->tde->tty_id, (size_t)tdo->tde->data.len);
+	pr_debug("collect data for id %#x mnt_id %d (size %zu bytes)\n",
+		 tdo->tde->tty_id, tdo->tde->mnt_id, (size_t)tdo->tde->data.len);
 
 	list_for_each_entry(info, &all_ttys, list) {
 		if (tdo->tde->tty_id == info->tie->id &&
@@ -2199,7 +2210,8 @@ static int dump_one_tty(int lfd, uint32_t id, const struct fd_parms *p)
 	struct tty_driver *driver;
 	unsigned long *bitmap;
 
-	pr_info("Dumping tty %d with id %#x\n", lfd, id);
+	pr_debug("Dumping tty %s fd %d (mnt_id %d st_dev %#x) with id %#x\n",
+		 p->link->name, p->fd, p->mnt_id, (unsigned)p->stat.st_dev, id);
 
 	driver = get_tty_driver(p->stat.st_rdev, p->stat.st_dev);
 	if (driver->fd_get_index)
@@ -2208,7 +2220,7 @@ static int dump_one_tty(int lfd, uint32_t id, const struct fd_parms *p)
 		index = driver->index;
 
 	if (index == INDEX_ERR) {
-		pr_info("Can't obtain index on tty %d id %#x\n", lfd, id);
+		pr_err("Can't obtain index on tty %d id %#x\n", lfd, id);
 		return -1;
 	}
 
@@ -2220,7 +2232,7 @@ static int dump_one_tty(int lfd, uint32_t id, const struct fd_parms *p)
 	if (is_pty(driver)) {
 		mnt_id = mount_resolve_devpts_mnt_id(p->link->name, p->mnt_id, p->stat.st_dev);
 		if (mnt_id < 0) {
-			pr_info("Can't obtain mnt_id on tty %d id %#x\n", lfd, id);
+			pr_err("Can't obtain mnt_id on tty %d id %#x\n", lfd, id);
 			return -1;
 		}
 	} else
