@@ -1777,6 +1777,10 @@ static int collect_one_tty(void *obj, ProtobufCMessage *msg, struct cr_img *i)
 		info->tfe->has_mnt_id = true;
 		info->tfe->mnt_id = 0;
 	}
+	if (info->tfe->tty_info_id > ((MAX_TTYS << 1))) {
+		pr_err("Too big index %u\n", info->tfe->tty_info_id);
+		return -1;
+	}
 	list_add_tail(&info->list, &collected_ttys);
 	return 0;
 }
