@@ -107,6 +107,8 @@ extern struct mount_info *lookup_mnt_sdev(unsigned int s_dev);
 extern dev_t phys_stat_resolve_dev(struct ns_id *, dev_t st_dev, const char *path);
 extern bool phys_stat_dev_match(dev_t st_dev, dev_t phys_dev,
 				struct ns_id *, const char *path);
+extern struct mount_info *lookup_first_fstype(int code);
+extern int mount_resolve_devpts_mnt_id(const char *path, int mnt_id, int s_dev);
 
 extern int restore_task_mnt_ns(struct pstree_item *current);
 extern void fini_restore_mntns(void);

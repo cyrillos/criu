@@ -289,6 +289,105 @@ bool phys_stat_dev_match(dev_t st_dev, dev_t phys_dev,
 	return phys_dev == phys_stat_resolve_dev(ns, st_dev, path);
 }
 
+struct mount_info *lookup_first_fstype(int code)
+{
+	struct mount_info *m;
+
+	for (m = mntinfo; m != NULL; m = m->next) {
+		if (m->fstype->code == code &&
+		    is_root(m->root))
+			return m;
+	}
+	return NULL;
+}
+
+static struct mount_info *lookup_mnt_sdev_on_root(unsigned int s_dev)
+{
+	struct mount_info *m;
+
+	for (m = mntinfo; m != NULL; m = m->next) {
+		if (kdev_to_odev(m->s_dev) == s_dev &&
+		    is_root(m->root))
+			return m;
+	}
+	return NULL;
+}
+
+/*
+ * Figuring out mount id is a bit tricky for PTYs: when
+ * several devpts mounted they have own superblocks
+ * thus opening /dev/<dirs>/ptmx leads to slave
+ * peers lay into /dev/<dirs>/0 and etc, but the
+ * exception is toplevel /dev/ptmx, when opened the
+ * kernel lookups for first "pts" downlevel directory mounted
+ * at /dev/pts (which of course must have DEVPTS_SUPER_MAGIC
+ * in properties). It's done for backward compatibility,
+ * see drivers/tty/pty.c:ptmx_open.
+ */
+int mount_resolve_devpts_mnt_id(const char *path, int mnt_id, int s_dev)
+{
+	struct mount_info *mi = NULL;
+	char *base = basename(path);
+
+	pr_debug("tty: resolving path %s mnt_id %d s_dev %#x\n", path, mnt_id, s_dev);
+
+	if (mnt_id != -1)
+		mi = lookup_mnt_id(mnt_id);
+	if (!mi) {
+		mi = lookup_mnt_sdev_on_root(s_dev);
+		if (!mi) {
+			pr_err("tty: No devpts mount point found for s_dev %#x\n", s_dev);
+			return -1;
+		}
+	}
+
+	pr_debug("tty: pre-resolved path %s to mnt_id %d root %s ns_mountpoint %s source %s fstype %s %d\n",
+		 path, mi->mnt_id, mi->root, mi->ns_mountpoint, mi->source,
+		 mi->fstype->name, mi->fstype->code);
+
+	/*
+	 * A special case: bindmounted ptmx, need to walk up to
+	 * a parent which most probably gonna be / where devtmps
+	 * sits.
+	 */
+	while (mi && issuffix(mi->ns_mountpoint, base)) {
+		pr_debug("tty: bindmount on mnt_id %d root %s ns_mountpoint %s source %s fstype %s %d\n",
+			 mi->mnt_id, mi->root, mi->ns_mountpoint, mi->source, mi->fstype->name, mi->fstype->code);
+		mi = mi->parent;
+		if (!mi) {
+			pr_err("tty: No devpts mount point found for s_dev %#x as a parent\n", s_dev);
+			return -1;
+		}
+	}
+
+	if (mi->fstype->code == FSTYPE__DEVPTS) {
+		pr_debug("tty: resolved path %s to mnt_id %d root %s ns_mountpoint %s source %s fstype %s %d\n",
+			 path, mi->mnt_id, mi->root, mi->ns_mountpoint, mi->source,
+			 mi->fstype->name, mi->fstype->code);
+		return mi->mnt_id;
+	} else if (mi->fstype->code == FSTYPE__DEVTMPFS) {
+		char ptmx_path[PATH_MAX];
+
+		snprintf(ptmx_path, sizeof(ptmx_path), "%s/pts/ptmx", mi->ns_mountpoint + 1);
+		pr_debug("tty: devtmps detected, try resolve as %s\n", ptmx_path);
+
+		mi = mount_resolve_path(mi, ptmx_path);
+		if (!mi) {
+			pr_err("tty: Can't resolve %s\n", ptmx_path);
+			return -1;
+		}
+		if (mi->fstype->code == FSTYPE__DEVPTS) {
+			pr_debug("tty: resolved updated path %s to mnt_id %d root %s ns_mountpoint %s source %s fstype %s %d\n",
+				 ptmx_path, mi->mnt_id, mi->root, mi->ns_mountpoint, mi->source,
+				 mi->fstype->name, mi->fstype->code);
+			return mi->mnt_id;
+		}
+	}
+
+	pr_err("tty: Can't resolve devpts for s_dev %#x\n", s_dev);
+	return -1;
+}
+
 /*
  * Compare super-blocks mounted at two places
  */

@@ -253,6 +253,20 @@ static inline bool issubpath(const char *path, const char *sub_path)
 }
 
 /*
+ * Check if @str ends with @sfx
+ */
+static inline bool issuffix(const char *str, const char *sfx)
+{
+	if (str && sfx) {
+		size_t str_len = strlen(str);
+		size_t sfx_len = strlen(sfx);
+		if (sfx_len <= str_len)
+			return !strcmp(&str[str_len-sfx_len], sfx);
+	}
+	return false;
+}
+
+/*
  * mkdir -p
  */
 int mkdirpat(int fd, const char *path, int mode);
