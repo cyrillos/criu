@@ -12,7 +12,6 @@
 #include <termios.h>
 #include <linux/major.h>
 
-#include "types.h"
 #include "common/compiler.h"
 #include "crtools.h"
 #include "files.h"
@@ -106,7 +105,7 @@ struct tty_info {
 struct tty_dump_info {
 	struct list_head		list;
 
-	u32				id;
+	uint32_t			id;
 	pid_t				sid;
 	pid_t				pgrp;
 	pid_t				pid_real;
@@ -376,7 +375,7 @@ static int tty_gen_id(struct tty_driver *driver, int index)
 	return (index << 1) + (driver->subtype == TTY_SUBTYPE_MASTER);
 }
 
-static int tty_get_index(u32 id)
+static int tty_get_index(uint32_t id)
 {
 	return id >> 1;
 }
@@ -1228,7 +1227,7 @@ static struct pstree_item *find_first_sid(int sid)
 	return NULL;
 }
 
-static int add_fake_fle(struct pstree_item *item, u32 desc_id)
+static int add_fake_fle(struct pstree_item *item, uint32_t desc_id)
 {
 	FdinfoEntry *e;
 
@@ -1293,7 +1292,7 @@ static struct file_desc_ops ctl_tty_desc_ops = {
 	.open		= ctl_tty_open,
 };
 
-static int prepare_ctl_tty(struct pstree_item *item, u32 ctl_tty_id)
+static int prepare_ctl_tty(struct pstree_item *item, uint32_t ctl_tty_id)
 {
 	struct fdinfo_list_entry *fle;
 	struct ctl_tty *ctl_tty;
@@ -1575,7 +1574,7 @@ static int tty_setup_slavery(void)
 	return tty_setup_orphan_slavery();
 }
 
-static int verify_termios(u32 id, TermiosEntry *e)
+static int verify_termios(uint32_t id, TermiosEntry *e)
 {
 	if (e && e->n_c_cc < TERMIOS_NCC) {
 		pr_err("pty ID %#x n_c_cc (%d) has wrong value\n",
@@ -1860,7 +1859,7 @@ int dump_verify_tty_sids(void)
 	return ret;
 }
 
-static int dump_tty_info(int lfd, u32 id, const struct fd_parms *p, struct tty_driver *driver, int index)
+static int dump_tty_info(int lfd, uint32_t id, const struct fd_parms *p, struct tty_driver *driver, int index)
 {
 	TtyInfoEntry info		= TTY_INFO_ENTRY__INIT;
 	TermiosEntry termios		= TERMIOS_ENTRY__INIT;
@@ -2000,7 +1999,7 @@ out:
 	return ret;
 }
 
-static int dump_one_tty(int lfd, u32 id, const struct fd_parms *p)
+static int dump_one_tty(int lfd, uint32_t id, const struct fd_parms *p)
 {
 	TtyFileEntry e = TTY_FILE_ENTRY__INIT;
 	int ret = 0, index = -1;
@@ -2025,7 +2024,7 @@ static int dump_one_tty(int lfd, u32 id, const struct fd_parms *p)
 	e.fown		= (FownEntry *)&p->fown;
 
 	if (driver->type != TTY_TYPE__EXT_TTY) {
-		u32 rf_id;
+		uint32_t rf_id;
 
 		fd_id_generate_special(NULL, &rf_id);
 		if (dump_one_reg_file(lfd, rf_id, p))
