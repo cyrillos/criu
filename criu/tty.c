@@ -1215,12 +1215,13 @@ static struct file_desc_ops tty_desc_ops = {
 	.name		= tty_d_name,
 };
 
-static struct pstree_item *find_first_sid(int sid)
+static struct pstree_item *find_session_leader(pid_t sid)
 {
 	struct pstree_item *item;
 
 	for_each_pstree_item(item) {
-		if (item->sid == sid)
+		if (item->sid == sid &&
+		    vpid(item) == sid)
 			return item;
 	}
 
@@ -1418,8 +1419,8 @@ static int tty_find_restoring_task(struct tty_info *info)
 		 * and it can restore the controlling terminal
 		 * for us.
 		 */
-		item = find_first_sid(info->tie->sid);
-		if (item && vpid(item) == item->sid) {
+		item = find_session_leader(info->tie->sid);
+		if (item) {
 			pr_info("Set a control terminal %#x to %d\n",
 				info->tfe->id, info->tie->sid);
 			return prepare_ctl_tty(item, info->tfe->id);
@@ -1835,9 +1836,8 @@ int dump_verify_tty_sids(void)
 	 */
 	list_for_each_entry_safe(dinfo, n, &all_ttys, list) {
 		if (!ret && dinfo->sid) {
-			struct pstree_item *item = find_first_sid(dinfo->sid);
-
-			if (!item || vpid(item) != dinfo->sid) {
+			struct pstree_item *item = find_session_leader(dinfo->sid);
+			if (!item) {
 				if (!opts.shell_job) {
 					pr_err("Found dangling tty with sid %d pgid %d (%s) on peer fd %d.\n",
 					       dinfo->sid, dinfo->pgrp,
