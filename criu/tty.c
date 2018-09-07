@@ -131,11 +131,11 @@ static int self_stdin_fdid = -1;
  * If this won't be enough in future we simply need to
  * change tracking mechanism to some more extendable.
  *
- * This particular bitmap requires 256 bytes of memory.
+ * This particular bitmap requires 512 bytes of memory.
  * Pretty acceptable trade off in a sake of simplicity.
  */
 
-#define MAX_TTYS	1024
+#define MAX_TTYS	2048
 
 /*
  * Custom indices should be even numbers just in case if we
@@ -148,6 +148,10 @@ static int self_stdin_fdid = -1;
 #define CTTY_INDEX	1006
 #define ETTY_INDEX	1008
 #define STTY_INDEX	1010
+
+#define MIN_CTTY_INDEX	1012
+#define MAX_CTTY_INDEX	2002
+
 #define INDEX_ERR	(MAX_TTYS + 1)
 
 static DECLARE_BITMAP(tty_bitmap, (MAX_TTYS << 1));
@@ -208,10 +212,51 @@ static struct tty_driver console_driver = {
 	.open			= open_simple_tty,
 };
 
+static int ctty_fd_get_index(int fd, const struct fd_parms *p)
+{
+	static unsigned int next_index = 0;
+	struct parasite_tty_args *pti;
+	struct tty_dump_info *dinfo;
+
+	pti = parasite_dump_tty(p->fd_ctl, p->fd, TTY_TYPE__CTTY);
+	if (!pti) {
+		pr_err("Can't fetch tty params\n");
+		return INDEX_ERR;
+	}
+
+	if (!pti->sid) {
+		pr_err("Can't fetch tty SID\n");
+		return INDEX_ERR;
+	}
+
+	list_for_each_entry(dinfo, &all_ttys, list) {
+		if (dinfo->driver->type != TTY_TYPE__CTTY)
+			continue;
+		if (dinfo->sid == pti->sid)
+			return dinfo->index;
+	}
+
+	if (next_index < MAX_CTTY_INDEX)
+		return MIN_CTTY_INDEX + next_index++;
+
+	pr_err("Index for /dev/tty is too big\n");
+	return INDEX_ERR;
+}
+
+static int ctty_img_get_index(struct tty_info *ti)
+{
+	/*
+	 * On restore we don't care about index, because
+	 * sessions restore goes via pty driver.
+	 */
+	return CTTY_INDEX;
+}
+
 static struct tty_driver ctty_driver = {
 	.type			= TTY_TYPE__CTTY,
 	.name			= "ctty",
-	.index			= CTTY_INDEX,
+	.fd_get_index		= ctty_fd_get_index,
+	.img_get_index		= ctty_img_get_index,
 	.open			= open_simple_tty,
 };
 
@@ -1941,6 +1986,9 @@ static int dump_tty_info(int lfd, uint32_t id, const struct fd_parms *p,
 			return -1;
 		}
 		dinfo->index	= index;
+	} else if (is_ctty(driver)) {
+		dinfo->index	= index;
+		dinfo->lfd	= -1;
 	} else {
 		dinfo->index	= -1;
 		dinfo->lfd	= -1;
