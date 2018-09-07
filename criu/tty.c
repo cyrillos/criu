@@ -78,49 +78,49 @@
 #define LOG_PREFIX "tty: "
 
 struct tty_data_entry {
-	struct list_head		list;
-	TtyDataEntry			*tde;
+	struct list_head	list;
+	TtyDataEntry		*tde;
 };
 
 struct tty_info {
-	struct list_head		list;
-	struct file_desc		d;
+	struct list_head	list;
+	struct file_desc	d;
 
-	struct file_desc		*reg_d;
+	struct file_desc	*reg_d;
 
-	TtyFileEntry			*tfe;
-	TtyInfoEntry			*tie;
+	TtyFileEntry		*tfe;
+	TtyInfoEntry		*tie;
 
-	struct list_head		sibling;
-	struct tty_driver		*driver;
+	struct list_head	sibling;
+	struct tty_driver	*driver;
 
-	bool				create;
-	bool				inherit;
+	bool			create;
+	bool			inherit;
 
-	struct tty_info			*ctl_tty;
-	struct tty_info			*link;
-	struct tty_data_entry		*tty_data;
+	struct tty_info		*ctl_tty;
+	struct tty_info		*link;
+	struct tty_data_entry	*tty_data;
 
-	int				fdstore_id;
+	int			fdstore_id;
 };
 
 struct tty_dump_info {
-	struct list_head		list;
+	struct list_head	list;
 
-	uint32_t			id;
-	pid_t				sid;
-	pid_t				pgrp;
-	pid_t				pid_real;
-	int				fd;
-	int				mnt_id;
-	struct tty_driver		*driver;
+	uint32_t		id;
+	pid_t			sid;
+	pid_t			pgrp;
+	pid_t			pid_real;
+	int			fd;
+	int			mnt_id;
+	struct tty_driver	*driver;
 
-	int				index;
-	int				lfd;
-	int				flags;
-	struct tty_dump_info		*link;
-	void				*tty_data;
-	size_t				tty_data_size;
+	int			index;
+	int			lfd;
+	int			flags;
+	struct tty_dump_info	*link;
+	void			*tty_data;
+	size_t			tty_data_size;
 };
 
 static bool stdin_isatty = false;
@@ -137,24 +137,24 @@ static int self_stdin_fdid = -1;
  * Pretty acceptable trade off in a sake of simplicity.
  */
 
-#define MAX_TTYS	2048
+#define MAX_TTYS		2048
 
 /*
  * Custom indices should be even numbers just in case if we
  * need odds for pair numbering someday.
  */
 
-#define MAX_PTY_INDEX	1000
-#define CONSOLE_INDEX	1002
-#define VT_INDEX	1004
-#define CTTY_INDEX	1006
-#define ETTY_INDEX	1008
-#define STTY_INDEX	1010
+#define MAX_PTY_INDEX		1000
+#define CONSOLE_INDEX		1002
+#define VT_INDEX		1004
+#define CTTY_INDEX		1006
+#define ETTY_INDEX		1008
+#define STTY_INDEX		1010
 
-#define MIN_CTTY_INDEX	1012
-#define MAX_CTTY_INDEX	2002
+#define MIN_CTTY_INDEX		1012
+#define MAX_CTTY_INDEX		2002
 
-#define INDEX_ERR	(MAX_TTYS + 1)
+#define INDEX_ERR		(MAX_TTYS + 1)
 
 #define TTY_BITMAP_LONGS	(BITS_TO_LONGS((MAX_TTYS << 1)))
 #define TTY_BITMAP_BITS		(TTY_BITMAP_LONGS * BITS_PER_LONG)
@@ -201,17 +201,17 @@ static unsigned long *tty_lookup_bitmap(tty_bitmap_t **root, int mnt_id)
 }
 
 struct tty_driver {
-	short				type;
-	short				subtype;
-	char				*name;
-	int				index;
-	int				(*fd_get_index)(int fd, const struct fd_parms *p);
-	int				(*img_get_index)(struct tty_info *ti);
-	int				(*open)(struct tty_info *ti);
+	short			type;
+	short			subtype;
+	char			*name;
+	int			index;
+	int			(*fd_get_index)(int fd, const struct fd_parms *p);
+	int			(*img_get_index)(struct tty_info *ti);
+	int			(*open)(struct tty_info *ti);
 };
 
-#define TTY_SUBTYPE_MASTER			0x0001
-#define TTY_SUBTYPE_SLAVE			0x0002
+#define TTY_SUBTYPE_MASTER	0x0001
+#define TTY_SUBTYPE_SLAVE	0x0002
 
 static int ptm_fd_get_index(int fd, const struct fd_parms *p)
 {
