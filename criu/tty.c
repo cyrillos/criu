@@ -319,6 +319,11 @@ struct tty_driver *get_tty_driver(dev_t rdev, dev_t dev)
 	return NULL;
 }
 
+static inline int is_ctty(struct tty_driver *driver)
+{
+	return driver->type == TTY_TYPE__CTTY;
+}
+
 static inline int is_pty(struct tty_driver *driver)
 {
 	return driver->type == TTY_TYPE__PTY;
@@ -1151,7 +1156,7 @@ static bool tty_deps_restored(struct tty_info *info)
 	struct fdinfo_list_entry *fle;
 	struct tty_info *tmp;
 
-	if (info->driver->type == TTY_TYPE__CTTY) {
+	if (is_ctty(info->driver)) {
 		list_for_each_entry(fle, list, ps_list) {
 			if (fle->desc->ops->type != FD_TYPES__TTY || fle->desc == &info->d)
 				continue;
@@ -1167,8 +1172,7 @@ static bool tty_deps_restored(struct tty_info *info)
 			tmp = container_of(fle->desc, struct tty_info, d);
 
 			/* slaves wait for masters except ctty */
-			if (tmp->driver->type == TTY_TYPE__CTTY ||
-			    !tty_is_master(tmp))
+			if (is_ctty(tmp->driver) || !tty_is_master(tmp))
 				continue;
 			if (fle->stage != FLE_RESTORED)
 				return false;
@@ -1393,7 +1397,7 @@ static int tty_find_restoring_task(struct tty_info *info)
 	 * driver in future) should restore the
 	 * session.
 	 */
-	if (info->driver->type == TTY_TYPE__CTTY)
+	if (is_ctty(info->driver))
 		return 0;
 
 	if (info->tie->sid) {
@@ -1522,8 +1526,7 @@ static int tty_setup_slavery(void)
 	 * terminal.
 	 */
 	list_for_each_entry(info, &all_ttys, list) {
-		if (!info->tie->sid || info->ctl_tty ||
-		    info->driver->type == TTY_TYPE__CTTY)
+		if (!info->tie->sid || info->ctl_tty || is_ctty(info->driver))
 			continue;
 
 		if (!tty_is_master(info) && info->link)
@@ -1533,8 +1536,7 @@ static int tty_setup_slavery(void)
 		pr_debug("ctl tty leader %#x\n", info->tfe->id);
 		peer = info;
 		list_for_each_entry_safe_continue(peer, m, &all_ttys, list) {
-			if (!peer->tie->sid || peer->ctl_tty ||
-			    peer->driver->type == TTY_TYPE__CTTY)
+			if (!peer->tie->sid || peer->ctl_tty || is_ctty(peer->driver))
 				continue;
 			if (peer->tie->sid == info->tie->sid &&
 			    peer->tie->mnt_id == info->tie->mnt_id) {
@@ -2319,7 +2321,7 @@ static int tty_verify_ctty(void)
 	list_for_each_entry(d, &all_ttys, list) {
 		struct tty_dump_info *n = NULL;
 
-		if (d->driver->type != TTY_TYPE__CTTY)
+		if (!is_ctty(d->driver))
 			continue;
 
 		list_for_each_entry(p, &all_ttys, list) {
