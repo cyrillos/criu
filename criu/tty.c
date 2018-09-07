@@ -1990,8 +1990,8 @@ struct collect_image_info tty_cdata = {
 /* Make sure the ttys we're dumping do belong our process tree */
 int dump_verify_tty_sids(void)
 {
-	struct tty_dump_info *dinfo, *n;
-	int ret = 0;
+	struct tty_dump_info *dinfo;
+	struct pstree_item *item;
 
 	/*
 	 * There might be a cases where we get sid/pgid on
@@ -2011,29 +2011,26 @@ int dump_verify_tty_sids(void)
 	 * In this case we simply zap sid/pgid and inherit
 	 * the peer from the current terminal on restore.
 	 */
-	list_for_each_entry_safe(dinfo, n, &all_ttys, list) {
-		if (!ret && dinfo->sid) {
-			struct pstree_item *item = find_session_leader(dinfo->sid);
-			if (!item) {
-				if (!opts.shell_job) {
-					pr_err("Found dangling tty with sid %d pgid %d (%s) on peer fd %d.\n",
-					       dinfo->sid, dinfo->pgrp,
-					       dinfo->driver->name, dinfo->fd);
-					/*
-					 * First thing people do with criu is dump smth
-					 * run from shell. This is typical pitfall, warn
-					 * user about it explicitly.
-					 */
-					pr_msg("Task attached to shell terminal. "
-						"Consider using --" OPT_SHELL_JOB " option. "
-						"More details on http://criu.org/Simple_loop\n");
-					ret = -1;
-				}
-			}
+	list_for_each_entry(dinfo, &all_ttys, list) {
+		if (dinfo->sid) {
+			item = find_session_leader(dinfo->sid);
+			if (item || opts.shell_job)
+				continue;
+			pr_err("Found dangling tty with sid %d pgid %d (%s) on peer fd %d.\n",
+			       dinfo->sid, dinfo->pgrp, dinfo->driver->name, dinfo->fd);
+			/*
+			 * First thing people do with criu is dump smth
+			 * run from shell. This is typical pitfall, warn
+			 * user about it explicitly.
+			 */
+			pr_msg("Task attached to shell terminal. "
+			       "Consider using --" OPT_SHELL_JOB " option. "
+			       "More details on http://criu.org/Simple_loop\n");
+			break;
 		}
 	}
 
-	return ret;
+	return (&dinfo->list == &all_ttys) ? 0 : -1;
 }
 
 static int32_t encode_mnt_id(int32_t mnt_id)
