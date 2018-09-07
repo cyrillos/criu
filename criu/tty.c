@@ -2378,20 +2378,19 @@ static int tty_verify_ctty(void)
 
 		list_for_each_entry(p, &all_ttys, list) {
 			if (!is_pty(p->driver)	||
-			    p->sid != d->sid	||
-			    p->pgrp != d->sid)
+			    p->sid != d->sid)
 				continue;
 			n = p;
 			break;
 		}
 
 		if (!n) {
-			pr_err("ctty inheritance detected sid/pgrp %d, "
-			       "no PTY peer with sid/pgrp needed\n",
+			pr_err("ctty inheritance detected sid %d, "
+			       "no PTY peer with sid needed\n",
 			       d->sid);
 			return -ENOENT;
 		} else if (n->pid_real != d->pid_real) {
-			pr_err("ctty inheritance detected sid/pgrp %d "
+			pr_err("ctty inheritance detected sid %d "
 			       "(ctty pid_real %d pty pid_real %d)\n",
 			       d->sid, d->pid_real, n->pid_real);
 			return -ENOENT;
