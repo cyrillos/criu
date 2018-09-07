@@ -522,6 +522,8 @@ static int tty_test_and_set(int bit, unsigned long *bitmap)
 {
 	int ret;
 
+	BUG_ON(bit >= TTY_BITMAP_BITS);
+
 	ret = test_bit(bit, bitmap);
 	if (!ret)
 		set_bit(bit, bitmap);
