@@ -3,6 +3,7 @@
 
 #include <linux/securebits.h>
 #include <linux/capability.h>
+#include <linux/aio_abi.h>
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <sys/file.h>
