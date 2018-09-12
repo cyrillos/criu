@@ -58,9 +58,6 @@ static int early_init(void)
 	if (init_service_fd())
 		return 1;
 
-	if (kerndat_init())
-		return 1;
-
 	return 0;
 }
 
@@ -212,6 +209,9 @@ int main(int argc, char *argv[], char *envp[])
 	}
 
 	if (log_init(opts.output))
+		return 1;
+
+	if (kerndat_init())
 		return 1;
 
 	if (opts.deprecated_ok)
