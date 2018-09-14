@@ -579,6 +579,7 @@ static int unix_resolve_name(int lfd, uint32_t id, struct unix_sk_desc *d,
 	char rpath[PATH_MAX];
 	struct ns_id *ns;
 	struct stat st;
+	int root_fd;
 	int mntns_root;
 	int ret, mnt_id;
 
@@ -624,11 +625,18 @@ static int unix_resolve_name(int lfd, uint32_t id, struct unix_sk_desc *d,
 		goto postprone;
 	}
 
+	ret = cr_set_root(mntns_root, &root_fd);
+	if (ret)
+		goto out;
+
 	snprintf(rpath, sizeof(rpath), ".%s", name);
 	if (fstatat(mntns_root, rpath, &st, 0)) {
 		if (errno != ENOENT) {
 			pr_warn("Can't stat socket %#x(%s), skipping: %m (err %d)\n",
 				id, rpath, errno);
+			ret = cr_restore_root(root_fd);
+			if (ret)
+				goto out;
 			goto skip;
 		}
 
@@ -643,6 +651,10 @@ static int unix_resolve_name(int lfd, uint32_t id, struct unix_sk_desc *d,
 			(int)d->vfs_dev, (int)d->vfs_ino);
 		deleted = true;
 	}
+
+	ret = cr_restore_root(root_fd);
+	if (ret)
+		goto out;
 
 	d->mode = st.st_mode;
 	d->uid	= st.st_uid;
