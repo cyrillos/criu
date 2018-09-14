@@ -290,8 +290,9 @@ static int resolve_rel_name(uint32_t id, struct unix_sk_desc *sk, const struct f
 
 	for (i = 0; i < ARRAY_SIZE(dirs); i++) {
 		char dir[PATH_MAX], path[PATH_MAX];
+		int ret, root_fd;
 		struct stat st;
-		int ret;
+		int errno_save;
 
 		snprintf(path, sizeof(path), "/proc/%d/%s", p->pid, dirs[i]);
 		ret = readlink(path, dir, sizeof(dir));
@@ -301,13 +302,22 @@ static int resolve_rel_name(uint32_t id, struct unix_sk_desc *sk, const struct f
 		}
 		dir[ret] = 0;
 
+		if (cr_set_root(mntns_root, &root_fd))
+			goto err;
+
 		if (snprintf(path, sizeof(path), ".%s/%s", dir, sk->name) >= sizeof(path)) {
 			pr_err("The path .%s/%s is too long\n", dir, sk->name);
 			goto err;
 		}
-		if (fstatat(mntns_root, path, &st, 0)) {
-			if (errno == ENOENT)
+		ret = fstatat(mntns_root, path, &st, 0);
+		errno_save = errno;
+		if (cr_restore_root(root_fd))
+			goto err;
+
+		if (ret) {
+			if (errno_save == ENOENT)
 				continue;
+			pr_perror("Unable to stat %s", path);
 			goto err;
 		}
 
@@ -567,6 +577,7 @@ static int unix_resolve_name(int lfd, uint32_t id, struct unix_sk_desc *d,
 	char rpath[PATH_MAX];
 	struct ns_id *ns;
 	struct stat st;
+	int root_fd;
 	int mntns_root;
 	int ret, mnt_id;
 
@@ -607,11 +618,18 @@ static int unix_resolve_name(int lfd, uint32_t id, struct unix_sk_desc *d,
 		goto postprone;
 	}
 
+	ret = cr_set_root(mntns_root, &root_fd);
+	if (ret)
+		goto out;
+
 	snprintf(rpath, sizeof(rpath), ".%s", name);
 	if (fstatat(mntns_root, rpath, &st, 0)) {
 		if (errno != ENOENT) {
 			pr_warn("Can't stat socket %#x(%s), skipping: %m (err %d)\n",
 				id, rpath, errno);
+			ret = cr_restore_root(root_fd);
+			if (ret)
+				goto out;
 			goto skip;
 		}
 
@@ -626,6 +644,10 @@ static int unix_resolve_name(int lfd, uint32_t id, struct unix_sk_desc *d,
 			(int)d->vfs_dev, (int)d->vfs_ino);
 		deleted = true;
 	}
+
+	ret = cr_restore_root(root_fd);
+	if (ret)
+		goto out;
 
 	d->mode = st.st_mode;
 	d->uid	= st.st_uid;
