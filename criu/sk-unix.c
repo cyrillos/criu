@@ -289,8 +289,9 @@ static int resolve_rel_name(uint32_t id, struct unix_sk_desc *sk, const struct f
 
 	for (i = 0; i < ARRAY_SIZE(dirs); i++) {
 		char dir[PATH_MAX], path[PATH_MAX];
+		int ret, root_fd;
 		struct stat st;
-		int ret;
+		int errno_save;
 
 		snprintf(path, sizeof(path), "/proc/%d/%s", p->pid, dirs[i]);
 		ret = readlink(path, dir, sizeof(dir));
@@ -300,13 +301,22 @@ static int resolve_rel_name(uint32_t id, struct unix_sk_desc *sk, const struct f
 		}
 		dir[ret] = 0;
 
+		if (cr_set_root(mntns_root, &root_fd))
+			goto err;
+
 		if (snprintf(path, sizeof(path), ".%s/%s", dir, sk->name) >= sizeof(path)) {
 			pr_err("The path .%s/%s is too long\n", dir, sk->name);
 			goto err;
 		}
-		if (fstatat(mntns_root, path, &st, 0)) {
-			if (errno == ENOENT)
+		ret = fstatat(mntns_root, path, &st, 0);
+		errno_save = errno;
+		if (cr_restore_root(root_fd))
+			goto err;
+
+		if (ret) {
+			if (errno_save == ENOENT)
 				continue;
+			pr_perror("Unable to stat %s", path);
 			goto err;
 		}
 
