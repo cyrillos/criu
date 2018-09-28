@@ -18,6 +18,7 @@
 #include "images/pagemap.pb-c.h"
 #include "proc_parse.h"
 #include "img-remote.h"
+#include "namespaces.h"
 
 bool ns_per_id = false;
 bool img_common_magic = true;
@@ -412,6 +413,25 @@ int do_open_remote_image(int dfd, char *path, int flags)
 	return ret;
 }
 
+struct openat_args {
+	char	path[PATH_MAX];
+	int	flags;
+	int	err;
+	int	mode;
+};
+
+static int userns_openat(void *arg, int dfd, int pid)
+{
+	struct openat_args *pa = (struct openat_args *)arg;
+	int ret;
+
+	ret = openat(dfd, pa->path, pa->flags, pa->mode);
+	if (ret < 0)
+		pa->err = errno;
+
+	return ret;
+}
+
 static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long oflags, char *path)
 {
 	int ret, flags;
@@ -420,8 +440,26 @@ static int do_open_image(struct cr_img *img, int dfd, int type, unsigned long of
 
 	if (opts.remote && !(oflags & O_FORCE_LOCAL))
 		ret = do_open_remote_image(dfd, path, flags);
-	else
-		ret = openat(dfd, path, flags, CR_FD_PERM);
+	else {
+		/*
+		 * For pages images dedup we need to open images read-write on
+		 * restore, that may require proper capabilities, so we ask
+		 * usernsd to do it for us
+		 */
+		if (root_ns_mask & CLONE_NEWUSER &&
+		    type == CR_FD_PAGES && oflags & O_RDWR) {
+			struct openat_args pa = {
+				.flags = flags,
+				.err = 0,
+				.mode = CR_FD_PERM,
+			};
+			snprintf(pa.path, PATH_MAX, "%s", path);
+			ret = userns_call(userns_openat, UNS_FDOUT, &pa, sizeof(struct openat_args), dfd);
+			if (ret < 0)
+				errno = pa.err;
+		} else
+			ret = openat(dfd, path, flags, CR_FD_PERM);
+	}
 	if (ret < 0) {
 		if (!(flags & O_CREAT) && (errno == ENOENT || ret == -ENOENT)) {
 			pr_info("No %s image\n", path);
