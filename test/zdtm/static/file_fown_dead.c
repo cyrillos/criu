@@ -22,6 +22,9 @@
 const char *test_doc	= "Check for restore with dead file owners";
 const char *test_author	= "Cyrill Gorcunov <gorcunov@openvz.org>";
 
+char *filename;
+TEST_OPTION(filename, string, "file name", 1);
+
 struct params {
 	int	sigio;
 	int	pipe_flags[2];
@@ -81,8 +84,22 @@ int main(int argc, char *argv[])
 	uid_t ruid, euid, suid;
 	int status, pipes[2];
 	pid_t pid;
+	int fd;
 
 	test_init(argc, argv);
+
+	fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC | O_EXCL, 0644);
+	if (fd < 0) {
+		pr_perror("Can't create %s", filename);
+		exit(1);
+	}
+	close(fd);
+
+	fd = open(filename, O_PATH, 0644);
+	if (fd < 0) {
+		pr_perror("Can't open %s as O_PATH", filename);
+		exit(1);
+	}
 
 	shared = (void *)mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if ((void *)shared == MAP_FAILED) {
@@ -186,6 +203,8 @@ int main(int argc, char *argv[])
 		fail("params comparison failed\n");
 		exit(1);
 	}
+
+	close(fd);
 
 	pass();
 	return 0;
