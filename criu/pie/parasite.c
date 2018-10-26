@@ -325,6 +325,19 @@ static int fill_fds_opts(struct parasite_drain_fd *fds, struct fd_opts *opts)
 
 		p->flags = (char)flags;
 
+		/*
+		 * For O_PATH opened files there is no owner at all.
+		 */
+		if (flags < 0) {
+			pr_err("fcntl(%d, F_GETFL) -> %d\n", fd, flags);
+			return -1;
+		}
+		flags = sys_fcntl(fd, F_GETFL, 0);
+		if (flags & O_PATH) {
+			p->fown.pid = 0;
+			continue;
+		}
+
 		ret = sys_fcntl(fd, F_GETOWN_EX, (long)&owner_ex);
 		if (ret) {
 			pr_err("fcntl(%d, F_GETOWN_EX) -> %d\n", fd, ret);
