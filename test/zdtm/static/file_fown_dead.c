@@ -103,12 +103,12 @@ int main(int argc, char *argv[])
 
 	shared = (void *)mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if ((void *)shared == MAP_FAILED) {
-		fail("mmap failed");
+		pr_perror("mmap failed");
 		exit(1);
 	}
 
 	if (getresuid(&ruid, &euid, &suid)) {
-		fail("getresuid failed\n");
+		pr_perror("getresuid failed");
 		exit(1);
 	}
 
@@ -120,12 +120,12 @@ int main(int argc, char *argv[])
 	saio.sa_handler	= (sig_t)signal_handler_io;
 	saio.sa_flags	= SA_RESTART;
 	if (sigaction(SIGIO, &saio, 0)) {
-		fail("sigaction failed\n");
+		pr_perror("sigaction failed");
 		exit(1);
 	}
 
 	if (!getuid() && setresuid(-1, 1, -1)) {
-		fail("setresuid failed\n");
+		pr_err("setresuid failed\n");
 		exit(1);
 	}
 
@@ -135,14 +135,14 @@ int main(int argc, char *argv[])
 	    fcntl(pipes[1], F_SETSIG, SIGIO)					||
 	    fcntl(pipes[0], F_SETFL, fcntl(pipes[0], F_GETFL) | O_ASYNC)	||
 	    fcntl(pipes[1], F_SETFL, fcntl(pipes[1], F_GETFL) | O_ASYNC)) {
-		fail("fcntl failed\n");
+		pr_err("fcntl failed\n");
 		exit(1);
 	}
 
 	fill_pipe_params(shared, pipes);
 
 	if (setresuid(-1, euid, -1)) {
-		fail("setresuid failed\n");
+		pr_perror("setresuid failed\n");
 		exit(1);
 	}
 
@@ -157,7 +157,7 @@ int main(int argc, char *argv[])
 		fill_pipe_params(&p, pipes);
 
 		if (write(pipes[1], &p, sizeof(p)) != sizeof(p)) {
-			fail("write failed\n");
+			pr_perror("write failed\n");
 			exit(1);
 		}
 
@@ -165,7 +165,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (waitpid(pid, &status, P_ALL) == -1) {
-		fail("waitpid %d failed\n", pid);
+		pr_perror("waitpid %d failed\n", pid);
 		exit(1);
 	}
 
