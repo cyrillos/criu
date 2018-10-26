@@ -741,8 +741,19 @@ int restore_fown(int fd, FownEntry *fown)
 	owner.pid = fown->pid;
 
 	if (fcntl(fd, F_SETOWN_EX, &owner)) {
-		pr_perror("Can't setup %d file owner pid", fd);
-		return -1;
+		if (errno == ESRCH) {
+			/*
+			 * The pid obtained at the dump may no longer
+			 * exist, because the tasks with it has already
+			 * exited. Just ignore it.
+			 */
+			pr_debug("fown: No owner type %d pid %d found on file %d, skipping\n",
+				 owner.type, owner.pid, fd);
+		} else {
+			pr_perror("fown: Can't setup %d file owner type %d pid %d",
+				  fd, owner.type, owner.pid);
+			return -1;
+		}
 	}
 
 	if (setresuid(uids[0], uids[1], uids[2])) {
