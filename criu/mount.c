@@ -2646,7 +2646,8 @@ static int cr_pivot_root(char *root)
 {
 	char tmp_dir_tmpl[] = "crtools-put-root.XXXXXX";
 	bool tmp_dir = false;
-	char *put_root = "tmp";
+	char *put_root_ro = "tmp";
+	char *put_root;
 	int exit_code = -1;
 	struct stat st;
 
@@ -2659,14 +2660,33 @@ static int cr_pivot_root(char *root)
 		}
 	}
 
-	if (stat(put_root, &st) || !S_ISDIR(st.st_mode)) {
-		put_root = mkdtemp(tmp_dir_tmpl);
-		if (put_root == NULL) {
+	/*
+	 * When moving root into a new place we should use
+	 * temporary directory first: in particular we
+	 * already hit a problem where /tmp directory
+	 * was a bind mount itself inside own unshared
+	 * mount namespace. In result once everything is
+	 * finished we didn't see proper content.
+	 *
+	 * Thus try to use temporary generated directory
+	 * first, if it fails (say / is mounted as read
+	 * only) use /tmp. Well, strictly speaking we
+	 * should walk over the root fs and find first
+	 * toplevel dentry which is not mounted and use
+	 * it instead. But for simplicity lets stick this
+	 * way, the code is already too complex.
+	 */
+
+	put_root = mkdtemp(tmp_dir_tmpl);
+	if (!put_root) {
+		if (stat(put_root_ro, &st) || !S_ISDIR(st.st_mode)) {
 			pr_perror("Can't create a temporary directory");
 			return -1;
 		}
+		put_root = put_root_ro;
+	} else
 		tmp_dir = true;
-	}
+	pr_debug("\tPut root in %s\n", put_root);
 
 	if (mount(put_root, put_root, NULL, MS_BIND, NULL)) {
 		pr_perror("Unable to mount tmpfs in %s", put_root);
