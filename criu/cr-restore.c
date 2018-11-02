@@ -1029,6 +1029,7 @@ static int restore_one_zombie(CoreEntry *core)
 			pr_perror("Can't drop the dumpable flag");
 
 		signr = exit_code & 0x7F;
+		pr_debug("Killing zombie with signal %d\n", signr);
 		if (!sig_fatal(signr)) {
 			pr_warn("Exit with non fatal signal ignored\n");
 			signr = SIGABRT;
