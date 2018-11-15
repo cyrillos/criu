@@ -1162,6 +1162,13 @@ static int wait_helpers(struct task_restore_args *task_args)
 
 static int wait_zombies(struct task_restore_args *task_args)
 {
+	static const uint32_t step_ms = 100;
+	static const struct timespec req = {
+		.tv_nsec        = step_ms * 1000000,
+		.tv_sec         = 0,
+	};
+	struct timespec rem;
+	uint32_t nr_prints = 10;
 	int i;
 
 	for (i = 0; i < task_args->zombies_n; i++) {
@@ -1171,12 +1178,31 @@ static int wait_zombies(struct task_restore_args *task_args)
 
 		ret = sys_waitid(P_PID, task_args->zombies[i], NULL, WNOWAIT | WEXITED, NULL);
 		if (ret == -ECHILD) {
-			/* A process isn't reparented to this task yet.
-			 * Let's wait when someone complete this stage
-			 * and try again.
+			/*
+			 * A zombie is not reparented to us yet. So we need to
+			 * wait for it. If there some tasks left then we can
+			 * use @nr_in_progress to not calling waitid too often.
+			 * But in case if we're the root process, the @nr_in_progress
+			 * won't be altered and we use nanosleep with @step_ms
+			 * to relieve syscall pressure.
 			 */
-			futex_wait_while_eq(&task_entries_local->nr_in_progress,
-								nr_in_progress);
+			if (nr_in_progress > 1) {
+				futex_wait_while_eq(&task_entries_local->nr_in_progress,
+						    nr_in_progress);
+			} else {
+				if (nr_prints)
+					pr_debug("wait_zombies %d (nanosleep %ld %ld)\n",
+						 task_args->zombies[i], req.tv_sec, req.tv_nsec);
+				ret = sys_nanosleep((struct timespec *)&req, &rem);
+				if (ret == -EINTR) {
+					if (nr_prints)
+						pr_debug("\twait_zombies %d (nanosleep %ld %ld)\n",
+							 task_args->zombies[i], rem.tv_sec, rem.tv_nsec);
+					sys_nanosleep((struct timespec *)&rem, NULL);
+				}
+				if (nr_prints)
+					nr_prints--;
+			}
 			i--;
 			continue;
 		}
