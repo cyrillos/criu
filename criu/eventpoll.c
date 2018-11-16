@@ -124,10 +124,10 @@ static void dequeue_dinfo(struct eventpoll_dinfo *dinfo)
 
 int flush_eventpoll_dinfo_queue(void)
 {
-	struct eventpoll_dinfo *dinfo, *t;
+	struct eventpoll_dinfo *dinfo, *tmp;
 	ssize_t i;
 
-	list_for_each_entry_safe(dinfo, t, &dinfo_list, list) {
+	list_for_each_entry_safe(dinfo, tmp, &dinfo_list, list) {
 		EventpollFileEntry *e = dinfo->e;
 
 		for (i = 0; i < e->n_tfd; i++) {
@@ -177,7 +177,7 @@ int flush_eventpoll_dinfo_queue(void)
 	return 0;
 
 err:
-	list_for_each_entry_safe(dinfo, t, &dinfo_list, list)
+	list_for_each_entry_safe(dinfo, tmp, &dinfo_list, list)
 		dequeue_dinfo(dinfo);
 
 	return -1;
