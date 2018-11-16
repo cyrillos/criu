@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include "zdtmtst.h"
 
@@ -28,13 +30,16 @@ int main(int argc, char *argv[])
 {
 	int epollfd1, epollfd2, fd;
 	struct epoll_event ev;
+	task_waiter_t t;
 	int i, ret;
+	pid_t pid;
 
 	struct {
 		int	pipefd[2];
 	} pipes[250];
 
 	test_init(argc, argv);
+	task_waiter_init(&t);
 
 	epollfd1 = epoll_create(1);
 	if (epollfd1 < 0) {
@@ -91,8 +96,39 @@ int main(int argc, char *argv[])
 		test_msg("epoll source %d closed\n", fd);
 	}
 
+	pid = test_fork();
+	if (pid < 0) {
+		pr_err("Can't fork()\n");
+		exit(1);
+	} else if (pid == 0) {
+		epollfd1 = epoll_create(1);
+		if (epollfd1 < 0) {
+			pr_perror("epoll_create failed");
+			exit(1);
+		}
+
+		for (i = 0; i < ARRAY_SIZE(pipes); i++) {
+			ev.data.u64 = i;
+			pipes[i].pipefd[0] = dup(pipes[i].pipefd[0]);
+			test_msg("epoll %d add %d native\n", epollfd1, pipes[i].pipefd[0]);
+			if (epoll_ctl(epollfd1, EPOLL_CTL_ADD, pipes[i].pipefd[0], &ev)) {
+				pr_perror("Can't add pipe %d", pipes[i].pipefd[0]);
+				exit(1);
+			}
+			close(pipes[i].pipefd[0]);
+		}
+
+		task_waiter_complete(&t, 1);
+		task_waiter_wait4(&t, 2);
+		exit(0);
+	}
+
+	task_waiter_wait4(&t, 1);
+
 	test_daemon();
 	test_waitsig();
+
+	task_waiter_complete(&t, 2);
 
 	ret = 0;
 	for (i = 0; i < ARRAY_SIZE(pipes); i++) {
