@@ -102,4 +102,8 @@ extern bool is_vma_range_fmt(char *line);
 extern void parse_vmflags(char *buf, u32 *flags, u64 *madv, int *io_pf);
 extern int parse_uptime(uint64_t *upt);
 
+extern void debug_mountinfo(char *prefix, pid_t pid);
+extern void debug_lsdir(char *prefix, char *path);
+extern void debug_lsdirfd(char *prefix, int rfd, char *path);
+
 #endif /* __CR_PROC_PARSE_H__ */

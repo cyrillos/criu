@@ -41,6 +41,7 @@
 #include "timerfd.h"
 #include "path.h"
 #include "fault-injection.h"
+#include "criu-log.h"
 
 #include "protobuf.h"
 #include "images/fdinfo.pb-c.h"
@@ -1463,6 +1464,82 @@ static bool should_skip_mount(const char *mountpoint)
 	}
 
 	return false;
+}
+
+void debug_mountinfo(char *prefix, pid_t pid)
+{
+	char buf[4096];
+	char path[64];
+	FILE *f;
+
+	if (pr_quelled(LOG_DEBUG))
+		return;
+
+	snprintf(path, sizeof(path), "/proc/%d/mountinfo", pid);
+	f = fopen(path, "r");
+	if (!f) {
+		pr_perror("%s:%s %d: Can't open %s", __func__, prefix, pid, path);
+		return;
+	}
+
+	while (fgets(buf, sizeof(buf), f))
+		pr_debug("%s:%s %d: %s", __func__, prefix, pid, buf);
+	fclose(f);
+}
+
+void debug_lsdirfd(char *prefix, int rfd, char *path)
+{
+	struct dirent *de;
+	DIR *dir;
+	int fd;
+
+	if (pr_quelled(LOG_DEBUG))
+		return;
+
+	fd = openat(rfd, path, O_RDONLY | O_DIRECTORY, 0);
+	if (fd < 0) {
+		pr_perror("%s:%s Can't open %d:%s", __func__, prefix, rfd, path);
+		return;
+	}
+
+	dir = fdopendir(fd);
+	if (!dir) {
+		pr_perror("%s:%s Can't open %d:%s", __func__, prefix, rfd, path);
+		close(fd);
+		return;
+	}
+	for (de = readdir(dir); de; de = readdir(dir)) {
+		if (!strcmp(de->d_name, ".") ||
+		    !strcmp(de->d_name, ".."))
+			continue;
+		pr_debug("%s:%s d_ino %8ld d_name %s\n",
+			 __func__, prefix, de->d_ino, de->d_name);
+	}
+	closedir(dir);
+	close(fd);
+}
+
+void debug_lsdir(char *prefix, char *path)
+{
+	struct dirent *de;
+	DIR *dir;
+
+	if (pr_quelled(LOG_DEBUG))
+		return;
+
+	dir = opendir(path);
+	if (!dir) {
+		pr_perror("%s:%s Can't open %s", __func__, prefix, path);
+		return;
+	}
+	for (de = readdir(dir); de; de = readdir(dir)) {
+		if (!strcmp(de->d_name, ".") ||
+		    !strcmp(de->d_name, ".."))
+			continue;
+		pr_debug("%s:%s d_ino %8ld d_name %s\n",
+			 __func__, prefix, de->d_ino, de->d_name);
+	}
+	closedir(dir);
 }
 
 struct mount_info *parse_mountinfo(pid_t pid, struct ns_id *nsid, bool for_dump)
