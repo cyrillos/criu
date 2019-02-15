@@ -17,6 +17,15 @@ struct file_remap {
 	gid_t gid;
 };
 
+static inline void file_remap_init(struct file_remap *remap)
+{
+	remap->rpath	= NULL;
+	remap->is_dir	= false;
+	remap->uid	= -1;
+	remap->gid	= -1;
+	remap->rmnt_id	= -1;
+}
+
 struct reg_file_info {
 	struct file_desc	d;
 	RegFileEntry		*rfe;
