@@ -1001,37 +1001,50 @@ struct vma_area *alloc_vma_area(void)
 	return p;
 }
 
-int mkdirpat(int fd, const char *path, int mode)
+/*
+ * Make the whole @path to the specified directory, report
+ * the position of newly created directories via @new.
+ */
+int mkdirpat_precise(int fd, const char *path, int mode, const char **new)
 {
-	size_t i;
-	char made_path[PATH_MAX], *pos;
+	char made_path[PATH_MAX];
+	char *pos = made_path, *end;
+	const char *where = path;
 
 	if (strlen(path) >= PATH_MAX) {
 		pr_err("path %s is longer than PATH_MAX\n", path);
 		return -ENOSPC;
 	}
 
-	strcpy(made_path, path);
+	strcpy(pos, path);
 
-	i = 0;
-	if (made_path[0] == '/')
-		i++;
+	end = pos + strlen(path);
+	if (pos[0] == '/')
+		pos++;
 
-	for (; i < strlen(made_path); i++) {
-		pos = strchr(made_path + i, '/');
+	for (; pos < end; pos++) {
+		pos = strchr(pos, '/');
 		if (pos)
 			*pos = '\0';
-		if (mkdirat(fd, made_path, mode) < 0 && errno != EEXIST) {
-			int ret = -errno;
-			pr_perror("couldn't mkdirpat directory %s", made_path);
-			return ret;
+		if (mkdirat(fd, made_path, mode) < 0) {
+			if (errno == EEXIST) {
+				where = path;
+			} else {
+				int ret = -errno;
+				pr_perror("couldn't mkdirpat directory %s", made_path);
+				return ret;
+			}
 		}
 		if (pos) {
 			*pos = '/';
-			i = pos - made_path;
+			if (where == path)
+				where = &path[pos - made_path + 1];
 		} else
 			break;
 	}
+
+	if (new)
+		*new = where;
 
 	return 0;
 }
