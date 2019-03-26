@@ -34,7 +34,7 @@ int main(int argc, char *argv[])
 	int i, ret;
 	pid_t pid;
 
-	struct {
+	struct pipes_s {
 		int	pipefd[2];
 	} pipes[250];
 
@@ -46,11 +46,14 @@ int main(int argc, char *argv[])
 		pr_perror("epoll_create failed");
 		exit(1);
 	}
+	test_msg("parent epollfd1 %d\n", epollfd1);
+
 	epollfd2 = epoll_create(1);
 	if (epollfd2 < 0) {
 		pr_perror("epoll_create failed");
 		exit(1);
 	}
+	test_msg("parent epollfd2 %d\n", epollfd2);
 
 	memset(&ev, 0, sizeof(ev));
 	ev.events = EPOLLIN | EPOLLOUT;
@@ -101,25 +104,90 @@ int main(int argc, char *argv[])
 		pr_err("Can't fork()\n");
 		exit(1);
 	} else if (pid == 0) {
-		epollfd1 = epoll_create(1);
-		if (epollfd1 < 0) {
+		struct pipes_s subpipes[2];
+		uint8_t cw = 1, cr;
+		int epollfd3;
+
+		memset(&ev, 0, sizeof(ev));
+		ev.events = EPOLLIN | EPOLLOUT;
+
+		epollfd3 = epoll_create(1);
+		if (epollfd3 < 0) {
 			pr_perror("epoll_create failed");
 			exit(1);
 		}
+		test_msg("slave epollfd3 %d\n", epollfd3);
 
-		for (i = 0; i < ARRAY_SIZE(pipes); i++) {
-			ev.data.u64 = i;
-			pipes[i].pipefd[0] = dup(pipes[i].pipefd[0]);
-			test_msg("epoll %d add %d native\n", epollfd1, pipes[i].pipefd[0]);
-			if (epoll_ctl(epollfd1, EPOLL_CTL_ADD, pipes[i].pipefd[0], &ev)) {
-				pr_perror("Can't add pipe %d", pipes[i].pipefd[0]);
+		for (i = 0; i < ARRAY_SIZE(subpipes); i++) {
+			if (pipe(subpipes[i].pipefd)) {
+				pr_perror("Can't create subpipe\n");
 				exit(1);
 			}
-			close(pipes[i].pipefd[0]);
+		}
+
+		for (i = 0; i < ARRAY_SIZE(subpipes); i++) {
+			ev.data.u64 = i;
+			ret = dup(subpipes[i].pipefd[0]);
+			if (ret < 0) {
+				pr_perror("Can't dup");
+				exit(1);
+			}
+
+			test_msg("epoll %d add subpipe %d duped from %d to parent\n",
+				 epollfd1, ret, subpipes[i].pipefd[0]);
+			if (epoll_ctl(epollfd1, EPOLL_CTL_ADD, ret, &ev)) {
+				pr_perror("Can't add duped pipe %d to parent", ret);
+				exit(1);
+			}
+
+			test_msg("epoll %d add subpipe %d duped from %d to own\n",
+				 epollfd3, ret, subpipes[i].pipefd[0]);
+			if (epoll_ctl(epollfd3, EPOLL_CTL_ADD, ret, &ev)) {
+				pr_perror("Can't add duped pipe %d to own", ret);
+				exit(1);
+			}
+
+			close(subpipes[i].pipefd[0]);
+			subpipes[i].pipefd[0] = ret;
 		}
 
 		task_waiter_complete(&t, 1);
 		task_waiter_wait4(&t, 2);
+
+		for (i = 0; i < ARRAY_SIZE(subpipes); i++) {
+			if (write(subpipes[i].pipefd[1], &cw, sizeof(cw)) != sizeof(cw)) {
+				pr_perror("Unable to write into a pipe\n");
+				exit(1);
+			}
+
+			if (epoll_wait(epollfd1, &ev, 1, -1) != 1) {
+				pr_perror("Unable to wain events");
+				exit(1);
+			}
+
+			if (ev.data.u64 != i) {
+				pr_err("ev.fd=%d ev.data.u64=%#llx (%d expected)\n",
+				       ev.data.fd, (long long)ev.data.u64, i);
+				exit(1);
+			}
+
+			if (epoll_wait(epollfd3, &ev, 1, -1) != 1) {
+				pr_perror("Unable to wain events");
+				exit(1);
+			}
+
+			if (ev.data.u64 != i) {
+				pr_err("ev.fd=%d ev.data.u64=%#llx (%d expected)\n",
+				       ev.data.fd, (long long)ev.data.u64, i);
+				exit(1);
+			}
+
+			if (read(subpipes[i].pipefd[0], &cr, sizeof(cr)) != sizeof(cr)) {
+				pr_perror("read");
+				exit(1);
+			}
+		}
+
 		exit(0);
 	}
 
@@ -127,8 +195,6 @@ int main(int argc, char *argv[])
 
 	test_daemon();
 	test_waitsig();
-
-	task_waiter_complete(&t, 2);
 
 	ret = 0;
 	for (i = 0; i < ARRAY_SIZE(pipes); i++) {
@@ -167,6 +233,18 @@ int main(int argc, char *argv[])
 
 	if (ret)
 		return 1;
+
+	task_waiter_complete(&t, 2);
+
+	if (waitpid(pid, &ret, 0) != pid) {
+		pr_perror("Can't wait child");
+		return 1;
+	}
+
+	if (!WIFEXITED(ret) || WEXITSTATUS(ret) != 0) {
+		pr_perror("Can't finish child");
+		return 1;
+	}
 
 	pass();
 	return 0;
