@@ -26,6 +26,9 @@
 #include "kerndat.h"
 #include "file-ids.h"
 #include "kcmp-ids.h"
+#include "rst-malloc.h"
+#include "fdstore.h"
+#include "criu-log.h"
 
 #include "protobuf.h"
 #include "images/eventpoll.pb-c.h"
@@ -54,10 +57,42 @@ struct eventpoll_dinfo {
 	int				efd;
 };
 
-struct eventpoll_file_info {
+typedef struct {
+	void				*next;
+	pid_t				pid;
+} epoll_waiter_t;
+
+typedef struct eventpoll_file_info {
+	struct list_head		list;
+
 	EventpollFileEntry		*efe;
 	struct file_desc		d;
-};
+
+	bool				fdstore_needed;
+	int				fdstore_id;
+	atomic_t			fdstore_ready;
+
+	epoll_waiter_t			*waiters;
+} epoll_file_info_t;
+
+typedef union {
+	struct {
+		pid_t			pid;
+		unsigned int		tfd;
+	};
+	uint64_t			v;
+} epoll_target_key_t;
+
+typedef struct {
+	struct rb_node			node;
+	epoll_target_key_t		key;
+
+	epoll_file_info_t		*info;
+	EventpollTfdEntry		*tfde;
+} epoll_target_t;
+
+static struct list_head *rst_epoll_list;
+static struct rb_root *epoll_targets_tree;
 
 /* Checks if file descriptor @lfd is eventfd */
 int is_eventpoll_link(char *link)
@@ -146,14 +181,10 @@ int flush_eventpoll_dinfo_queue(void)
 
 	list_for_each_entry_safe(dinfo, tmp, &dinfo_list, list) {
 		EventpollFileEntry *e = dinfo->e;
-		EventpollTfdEntry **tfd_cpy;
+		EventpollTfdEntry **tfd_cpy = NULL;
 		size_t n_tfd_cpy = e->n_tfd;
 
-		tfd_cpy = xmemdup(e->tfd, sizeof(e->tfd[0]) * e->n_tfd);
-		if (!tfd_cpy)
-			goto err;
-
-		for (i = j = 0; i < e->n_tfd; i++) {
+		for (i = 0; i < e->n_tfd; i++) {
 			EventpollTfdEntry *tfde = e->tfd[i];
 			struct kid_elem ke = {
 				.pid	= dinfo->pid,
@@ -177,32 +208,25 @@ int flush_eventpoll_dinfo_queue(void)
 			pr_debug("kid_lookup_epoll: rbsearch match pid %d efd %d tfd %d toff %u -> %d\n",
 				 dinfo->pid, dinfo->efd, tfde->tfd, dinfo->toff[i].off, t->idx);
 
-			/* Make sure the pid matches */
+			/*
+			 * If PIDs are mismatched it means the target file is
+			 * came from another process (either by SCM or via
+			 * inheritance: epoll inhereted but new targed in child
+			 * opened and added).
+			 */
 			if (t->pid != dinfo->pid) {
-				pr_warn("kid_lookup_epoll: pid mismatch %d %d efd %d tfd %d toff %u, skip\n",
-					dinfo->pid, t->pid, dinfo->efd, tfde->tfd, dinfo->toff[i].off);
-				continue;
+				pr_debug("kid_lookup_epoll: pid mismatch %d %d efd %d tfd %d toff %u\n",
+					 dinfo->pid, t->pid, dinfo->efd, tfde->tfd, dinfo->toff[i].off);
+				tfde->has_pid = true;
+				tfde->pid = pid_to_virt(t->pid);
+				if (!tfde->pid) {
+					pr_err("kid_lookup_epoll: can't resolve real pid %d\n", t->pid);
+					goto err;
+				}
 			}
 
 			tfde->tfd = t->idx;
-
-			/*
-			 * FIXME: Until we implement full tfd migrated
-			 * support we simply ignore unrecoverable targets.
-			 * It is less harmful than interrupt checkpoint.
-			 *
-			 * There can be several cases:
-			 *  - epoll inherited bu target is own file
-			 *  - target inherited but epoll is own file
-			 *  - target pid is less than epoll pid (priority
-			 *    inverse)
-			 */
-			if (i != j)
-				e->tfd[j] = e->tfd[i];
-			j++;
 		}
-
-		e->n_tfd = j;
 
 		/*
 		 * Once we've resolved all targets we should drop those
@@ -218,6 +242,10 @@ int flush_eventpoll_dinfo_queue(void)
 		 * records in the queue.
 		 */
 		if (e->n_tfd) {
+			tfd_cpy = xmemdup(e->tfd, sizeof(e->tfd[0]) * e->n_tfd);
+			if (!tfd_cpy)
+				goto err;
+
 			qsort(e->tfd, e->n_tfd, sizeof(e->tfd[0]), etfd_cmp);
 			for (j = i = 1; i < e->n_tfd; i++) {
 				if (!etfd_cmp(e->tfd[i], e->tfd[i-1])) {
@@ -237,11 +265,11 @@ int flush_eventpoll_dinfo_queue(void)
 				pr_info_eventpoll_tfd("Dumping: ", e->id, e->tfd[i]);
 		}
 
-		if (e->n_tfd != n_tfd_cpy) {
+		if (tfd_cpy) {
 			memcpy(e->tfd, tfd_cpy, sizeof(e->tfd[0]) * n_tfd_cpy);
 			e->n_tfd = n_tfd_cpy;
+			xfree(tfd_cpy);
 		}
-		xfree(tfd_cpy);
 
 		if (ret)
 			goto err;
@@ -426,7 +454,155 @@ const struct fdtype_ops eventpoll_dump_ops = {
 	.dump		= dump_one_eventpoll,
 };
 
+static epoll_target_t *epoll_alloc_target(pid_t pid, unsigned int tfd)
+{
+	epoll_target_t *t = shmalloc(sizeof(*t));
+	if (!t) {
+		pr_err("epoll_target: Can't allocate pid %d tfd %u\n", pid, tfd);
+		return NULL;
+	}
+
+	memset(t, 0, sizeof(*t));
+
+	rb_init_node(&t->node);
+
+	t->key.pid	= pid;
+	t->key.tfd	= tfd;
+
+	return t;
+}
+
+static epoll_target_t *epoll_lookup_target(pid_t pid, unsigned int tfd,
+					   struct rb_node **last_parent,
+					   struct rb_node ***last_link)
+{
+	struct rb_node *node = epoll_targets_tree->rb_node;
+	struct rb_node **new = &epoll_targets_tree->rb_node;
+	struct rb_node *parent = NULL;
+
+	epoll_target_key_t key = {
+		.pid	= pid,
+		.tfd	= tfd,
+	};
+
+	while (node) {
+		epoll_target_t *this = rb_entry(node, epoll_target_t, node);
+
+		parent = *new;
+
+		if (key.v < this->key.v)
+			node = node->rb_left, new = &((*new)->rb_left);
+		else if (key.v > this->key.v)
+			node = node->rb_right, new = &((*new)->rb_right);
+		else
+			return this;
+	}
+
+	if (last_parent)
+		*last_parent = parent;
+	if (last_link)
+		*last_link = new;
+
+	return NULL;
+}
+
+static int prep_epoll_targets_cb(struct pprep_head *ph)
+{
+	struct eventpoll_file_info *info;
+	size_t i;
+
+	list_for_each_entry(info, rst_epoll_list, list) {
+		for (i = 0; i < info->efe->n_tfd; i++) {
+			EventpollTfdEntry *tfde = info->efe->tfd[i];
+			struct fdinfo_list_entry *fle;
+			struct rb_node *last_parent;
+			struct rb_node **last_link;
+			epoll_waiter_t *waiter;
+			epoll_target_t *t;
+
+			if (!tfde->has_pid)
+				continue;
+
+			fle = file_master(&info->d);
+
+			/*
+			 * Should not happen since we save pids
+			 * for foreign tasks only.
+			 */
+			if (unlikely(tfde->pid == vpid(fle->task))) {
+				pr_warn_once("epoll_target: Same pid %d\n", tfde->pid);
+				continue;
+			}
+
+			pr_debug("epoll_target: Foreign epoll_pid %d epoll_fd %d tfd %d waiter %d\n",
+				 vpid(fle->task), fle->fe->fd, tfde->tfd, tfde->pid);
+
+			t = epoll_lookup_target(tfde->pid, tfde->tfd, &last_parent, &last_link);
+			if (!t) {
+				t = epoll_alloc_target(tfde->pid, tfde->tfd);
+				if (!t)
+					return -ENOMEM;
+
+				t->info = info;
+				t->tfde = info->efe->tfd[i];
+				info->efe->tfd[i] = NULL;
+
+				rb_link_and_balance(epoll_targets_tree, &t->node,
+						    last_parent, last_link);
+				pr_debug("epoll_target: zap epoll_pid %d epoll_fd %d tfd %d\n",
+					 vpid(fle->task), fle->fe->fd, tfde->tfd);
+			}
+
+			if (!info->fdstore_needed)
+				info->fdstore_needed = true;
+
+			waiter = shmalloc(sizeof(*waiter));
+			if (waiter) {
+				epoll_waiter_t *w = info->waiters;
+				waiter->next = w, info->waiters = waiter;
+				waiter->pid = tfde->pid;
+			} else {
+				pr_err("epoll_target: Can't allocate waiter\n");
+				return -ENOMEM;
+			}
+		}
+	}
+
+	if (!pr_quelled(LOG_DEBUG)) {
+		struct rb_node *node;
+
+		pr_debug("\tepoll_target: migrated targets\n");
+		for (node = rb_first(epoll_targets_tree); node; node = rb_next(node)) {
+			epoll_target_t *t = rb_entry(node, epoll_target_t, node);
+			pr_debug("\tepoll_target: pid %d tfd %d\n", t->key.pid, t->key.tfd);
+		}
+	}
+
+	return 0;
+}
+static MAKE_PPREP_HEAD(prep_epoll_targets);
+
+int eventpoll_init(void)
+{
+	rst_epoll_list = shmalloc(sizeof(*rst_epoll_list));
+	if (!rst_epoll_list) {
+		pr_err("Can't allocate epoll list\n");
+		return -ENOMEM;
+	}
+	INIT_LIST_HEAD(rst_epoll_list);
+
+	epoll_targets_tree = shmalloc(sizeof(*epoll_targets_tree));
+	if (!epoll_targets_tree) {
+		pr_err("Can't allocate targets tree\n");
+		return -ENOMEM;
+	}
+	*epoll_targets_tree = RB_ROOT;
+
+	return 0;
+}
+
 static int eventpoll_post_open(struct file_desc *d, int fd);
+static int eventpoll_retore_tfd(int fd, int id, EventpollTfdEntry *tdefe);
 
 static int eventpoll_open(struct file_desc *d, int *new_fd)
 {
@@ -454,11 +630,77 @@ static int eventpoll_open(struct file_desc *d, int *new_fd)
 		goto err_close;
 	}
 
+	if (info->fdstore_needed) {
+		epoll_waiter_t *w;
+
+		info->fdstore_id = fdstore_add(tmp);
+		if (info->fdstore_id < 0) {
+			pr_err("epoll_target: fdstore fails epoll %#08x\n",
+			       info->efe->id);
+			goto err_close;
+		}
+
+		pr_debug("epoll_target: epoll %#08x fdstore_id %d\n",
+			 info->efe->id, info->fdstore_id);
+
+		atomic_set(&info->fdstore_ready, 1);
+
+		for (w = info->waiters; w; w = w->next) {
+			pr_debug("epoll_target: epoll %#08x wake %d\n",
+				 info->efe->id, w->pid);
+			set_fds_event(w->pid);
+		}
+	}
+
 	*new_fd = tmp;
 	return 1;
 err_close:
 	close(tmp);
 	return -1;
+}
+
+int eventpoll_notify_pre_open(pid_t pid, int tfd)
+{
+	epoll_target_t *t = epoll_lookup_target(pid, tfd, NULL, NULL);
+	int ready;
+
+	if (likely(!t))
+		return 0;
+
+	ready = atomic_read(&t->info->fdstore_ready);
+	pr_debug("epoll_target: pre_open: found pid %d tfd %u ready %d\n",
+		 t->key.pid, t->key.tfd, ready);
+
+	return !ready ? 1 : 0;
+}
+
+int eventpoll_notify_open(pid_t pid, int tfd)
+{
+	epoll_target_t *t = epoll_lookup_target(pid, tfd, NULL, NULL);
+	epoll_file_info_t *info;
+	int efd;
+
+	if (likely(!t))
+		return 0;
+	info = t->info;
+
+	efd = fdstore_get(info->fdstore_id);
+	if (efd < 0) {
+		pr_err("epoll_target: fdstore fails epoll %#08x for pid %d tfd %d\n",
+		       info->efe->id, pid, tfd);
+		return -1;
+	}
+
+	pr_debug("epoll_target: restore from fdstore epoll %#08x for pid %d tfd %d\n",
+		 info->efe->id, pid, tfd);
+
+	if (eventpoll_retore_tfd(efd, info->efe->id, t->tfde)) {
+		close(efd);
+		return -1;
+	}
+
+	close(efd);
+	return 0;
 }
 
 static int epoll_not_ready_tfd(EventpollTfdEntry *tdefe)
@@ -491,7 +733,7 @@ static int eventpoll_retore_tfd(int fd, int id, EventpollTfdEntry *tdefe)
 	event.events	= tdefe->events;
 	event.data.u64	= tdefe->data;
 	if (epoll_ctl(fd, EPOLL_CTL_ADD, tdefe->tfd, &event)) {
-		pr_perror("Can't add event on %#08x", id);
+		pr_perror("Can't add event on %#08x tfd %d", id, tdefe->tfd);
 		return -1;
 	}
 
@@ -506,10 +748,14 @@ static int eventpoll_post_open(struct file_desc *d, int fd)
 	info = container_of(d, struct eventpoll_file_info, d);
 
 	for (i = 0; i < info->efe->n_tfd; i++) {
+		if (!info->efe->tfd[i])
+			continue;
 		if (epoll_not_ready_tfd(info->efe->tfd[i]))
 			return 1;
 	}
 	for (i = 0; i < info->efe->n_tfd; i++) {
+		if (!info->efe->tfd[i])
+			continue;
 		if (eventpoll_retore_tfd(fd, info->efe->id, info->efe->tfd[i]))
 			return -1;
 	}
@@ -557,12 +803,22 @@ struct collect_image_info epoll_tfd_cinfo = {
 	.fd_type	= CR_FD_EVENTPOLL_TFD,
 	.pb_type	= PB_EVENTPOLL_TFD,
 	.collect	= collect_one_epoll_tfd,
-	.flags		= COLLECT_NOFREE,
+	.flags		= COLLECT_NOFREE | COLLECT_SHARED,
 };
 
 static int collect_one_epoll(void *o, ProtobufCMessage *msg, struct cr_img *i)
 {
 	struct eventpoll_file_info *info = o;
+
+	add_post_prepare_cb_once(&prep_epoll_targets);
+
+	info->fdstore_needed	= false;
+	info->fdstore_id	= -1;
+	info->waiters		= NULL;
+
+	atomic_set(&info->fdstore_ready, 0);
+
+	list_add_tail(&info->list, rst_epoll_list);
 
 	info->efe = pb_msg(msg, EventpollFileEntry);
 	pr_info_eventpoll("Collected ", info->efe);
@@ -574,4 +830,5 @@ struct collect_image_info epoll_cinfo = {
 	.pb_type	= PB_EVENTPOLL_FILE,
 	.priv_size	= sizeof(struct eventpoll_file_info),
 	.collect	= collect_one_epoll,
+	.flags		= COLLECT_SHARED,
 };

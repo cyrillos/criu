@@ -1118,8 +1118,15 @@ static int open_fd(struct fdinfo_list_entry *fle)
 		ret = receive_fd(fle);
 		if (ret != 0)
 			return ret;
+		ret = eventpoll_notify_open(fle->pid, fle->fe->fd);
+		if (ret != 0)
+			return ret;
 		goto out;
 	}
+
+	ret = eventpoll_notify_pre_open(fle->pid, fle->fe->fd);
+	if (ret != 0)
+		return ret;
 
 	/*
 	 * Open method returns the following values:
@@ -1137,6 +1144,8 @@ static int open_fd(struct fdinfo_list_entry *fle)
 	ret = d->ops->open(d, &new_fd);
 	if (ret != -1 && new_fd >= 0) {
 		if (setup_and_serve_out(fle, new_fd) < 0)
+			return -1;
+		if (eventpoll_notify_open(fle->pid, fle->fe->fd))
 			return -1;
 	}
 out:
