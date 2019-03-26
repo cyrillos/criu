@@ -122,6 +122,22 @@ static void dequeue_dinfo(struct eventpoll_dinfo *dinfo)
 	xfree(dinfo);
 }
 
+static int etfd_cmp(const void *__a, const void *__b)
+{
+	EventpollTfdEntry *a = (EventpollTfdEntry *)__a;
+	EventpollTfdEntry *b = (EventpollTfdEntry *)__b;
+
+	if (a->tfd > b->tfd)
+		return 1;
+	if (a->tfd < b->tfd)
+		return -1;
+	if (a->pid < b->pid)
+		return 1;
+	if (a->pid > b->pid)
+		return -1;
+	return 0;
+}
+
 int flush_eventpoll_dinfo_queue(void)
 {
 	struct eventpoll_dinfo *dinfo, *tmp;
@@ -187,6 +203,32 @@ int flush_eventpoll_dinfo_queue(void)
 		}
 
 		e->n_tfd = j;
+
+		/*
+		 * Once we've resolved all targets we should drop those
+		 * which are in state of dup/add/close (epoll kernel engine
+		 * saves all records while the target may simply not exist).
+		 *
+		 * tfd:        4 events:       1d data: ...
+		 * tfd:      704 events:       1d data: ...
+		 *
+		 * Here an application added fd=4 to an epoll, then dup'ed
+		 * fd=4 to fd=704, added it to the epoll and then closed fd=704.
+		 * Thus after the resolve with kcmp help we will have two tf=4
+		 * records in the queue.
+		 */
+		if (e->n_tfd) {
+			qsort(e->tfd, e->n_tfd, sizeof(e->tfd[0]), etfd_cmp);
+			for (j = i = 1; i < e->n_tfd; i++) {
+				if (!etfd_cmp(e->tfd[i], e->tfd[i-1])) {
+					pr_debug("kid_lookup_epoll: id %#x same tfd %u pid %d\n",
+						 e->id, e->tfd[i]->pid, e->tfd[i]->tfd);
+					continue;
+				}
+				e->tfd[j++] = e->tfd[i];
+			}
+			e->n_tfd = j;
+		}
 
 		pr_info_eventpoll("Dumping ", e);
 		ret = pb_write_one(img_from_set(glob_imgset, CR_FD_FILES), dinfo->fe, PB_FILE);
