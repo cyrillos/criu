@@ -125,12 +125,19 @@ static void dequeue_dinfo(struct eventpoll_dinfo *dinfo)
 int flush_eventpoll_dinfo_queue(void)
 {
 	struct eventpoll_dinfo *dinfo, *tmp;
-	ssize_t i;
+	size_t i, j;
+	int ret;
 
 	list_for_each_entry_safe(dinfo, tmp, &dinfo_list, list) {
 		EventpollFileEntry *e = dinfo->e;
+		EventpollTfdEntry **tfd_cpy;
+		size_t n_tfd_cpy = e->n_tfd;
 
-		for (i = 0; i < e->n_tfd; i++) {
+		tfd_cpy = xmemdup(e->tfd, sizeof(e->tfd[0]) * e->n_tfd);
+		if (!tfd_cpy)
+			goto err;
+
+		for (i = j = 0; i < e->n_tfd; i++) {
 			EventpollTfdEntry *tfde = e->tfd[i];
 			struct kid_elem ke = {
 				.pid	= dinfo->pid,
@@ -156,20 +163,46 @@ int flush_eventpoll_dinfo_queue(void)
 
 			/* Make sure the pid matches */
 			if (t->pid != dinfo->pid) {
-				pr_debug("kid_lookup_epoll: pid mismatch %d %d efd %d tfd %d toff %u\n",
-					 dinfo->pid, t->pid, dinfo->efd, tfde->tfd, dinfo->toff[i].off);
-				goto err;
+				pr_warn("kid_lookup_epoll: pid mismatch %d %d efd %d tfd %d toff %u, skip\n",
+					dinfo->pid, t->pid, dinfo->efd, tfde->tfd, dinfo->toff[i].off);
+				continue;
 			}
 
 			tfde->tfd = t->idx;
+
+			/*
+			 * FIXME: Until we implement full tfd migrated
+			 * support we simply ignore unrecoverable targets.
+			 * It is less harmful than interrupt checkpoint.
+			 *
+			 * There can be several cases:
+			 *  - epoll inherited bu target is own file
+			 *  - target inherited but epoll is own file
+			 *  - target pid is less than epoll pid (priority
+			 *    inverse)
+			 */
+			if (i != j)
+				e->tfd[j] = e->tfd[i];
+			j++;
 		}
 
-		pr_info_eventpoll("Dumping ", e);
-		if (pb_write_one(img_from_set(glob_imgset, CR_FD_FILES), dinfo->fe, PB_FILE))
-			goto err;
+		e->n_tfd = j;
 
-		for (i = 0; i < e->n_tfd; i++)
-			pr_info_eventpoll_tfd("Dumping: ", e->id, e->tfd[i]);
+		pr_info_eventpoll("Dumping ", e);
+		ret = pb_write_one(img_from_set(glob_imgset, CR_FD_FILES), dinfo->fe, PB_FILE);
+		if (!ret) {
+			for (i = 0; i < e->n_tfd; i++)
+				pr_info_eventpoll_tfd("Dumping: ", e->id, e->tfd[i]);
+		}
+
+		if (e->n_tfd != n_tfd_cpy) {
+			memcpy(e->tfd, tfd_cpy, sizeof(e->tfd[0]) * n_tfd_cpy);
+			e->n_tfd = n_tfd_cpy;
+		}
+		xfree(tfd_cpy);
+
+		if (ret)
+			goto err;
 
 		dequeue_dinfo(dinfo);
 	}
