@@ -169,8 +169,8 @@ int flush_eventpoll_dinfo_queue(void)
 			};
 			struct kid_elem *t = kid_lookup_epoll_tfd(&fd_tree, &ke, &slot);
 			if (!t) {
-				pr_debug("kid_lookup_epoll: no match pid %d efd %d tfd %d toff %u\n",
-					 dinfo->pid, dinfo->efd, tfde->tfd, dinfo->toff[i].off);
+				pr_err("kid_lookup_epoll: no match pid %d efd %d tfd %d toff %u\n",
+				       dinfo->pid, dinfo->efd, tfde->tfd, dinfo->toff[i].off);
 				goto err;
 			}
 
