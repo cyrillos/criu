@@ -10,8 +10,6 @@
 #include "common/compiler.h"
 #include "common/list.h"
 
-#include "criu-log.h"
-
 #include "util.h"
 #include "bitops.h"
 #include "pstree.h"
@@ -128,6 +126,7 @@ int install_service_fd(enum sfd_type type, int fd)
 		return fd;
 	}
 
+	sfd_verify_targtet(type, fd, sfd);
 	if (dup3(fd, sfd, O_CLOEXEC) != sfd) {
 		pr_perror("Dup %d -> %d failed", fd, sfd);
 		close(fd);
@@ -166,6 +165,7 @@ static void move_service_fd(struct pstree_item *me, int type, int new_id, int ne
 	if (old < 0)
 		return;
 
+	sfd_verify_targtet(type, old, new);
 	ret = dup2(old, new);
 	if (ret == -1) {
 		if (errno != EBADF)
