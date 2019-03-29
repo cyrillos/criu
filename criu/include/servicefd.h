@@ -38,11 +38,12 @@ extern bool sfds_protected;
 											\
 		snprintf(self_path, sizeof(self_path), "/proc/self/fd/%d", _new_fd);	\
 		if (access(self_path, F_OK)) {						\
-			pr_warn("type %d: busy target %d -> %d\n",			\
-				_type, _old_fd, _new_fd);				\
+			pr_warn("%s busy target %d -> %d\n",				\
+				sfd_type_name(_type), _old_fd, _new_fd);		\
 		}									\
 	} while (0)
 
+extern const char *sfd_type_name(enum sfd_type type);
 extern int init_service_fd(void);
 extern int get_service_fd(enum sfd_type type);
 extern bool is_any_service_fd(int fd);
