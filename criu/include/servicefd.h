@@ -37,7 +37,7 @@ extern bool sfds_protected;
 		char self_path[64];							\
 											\
 		snprintf(self_path, sizeof(self_path), "/proc/self/fd/%d", _new_fd);	\
-		if (access(self_path, F_OK)) {						\
+		if (!access(self_path, F_OK)) {						\
 			pr_warn("%s busy target %d -> %d\n",				\
 				sfd_type_name(_type), _old_fd, _new_fd);		\
 		}									\
