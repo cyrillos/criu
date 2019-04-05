@@ -152,8 +152,10 @@ int install_service_fd(enum sfd_type type, int fd)
 		return fd;
 	}
 
-	if (sfd_verify_target(type, fd, sfd))
-		return -1;
+	if (!test_bit(type, sfd_map)) {
+		if (sfd_verify_target(type, fd, sfd))
+			return -1;
+	}
 
 	if (dup3(fd, sfd, O_CLOEXEC) != sfd) {
 		pr_perror("%s dup %d -> %d failed",
@@ -194,7 +196,9 @@ static void move_service_fd(struct pstree_item *me, int type, int new_id, int ne
 	if (old < 0)
 		return;
 
-	sfd_verify_target(type, old, new);
+	if (!test_bit(type, sfd_map))
+		sfd_verify_target(type, old, new);
+
 	ret = dup2(old, new);
 	if (ret == -1) {
 		if (errno != EBADF)
