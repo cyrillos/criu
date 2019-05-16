@@ -139,45 +139,46 @@ static void display_stats(int what, StatsEntry *stats)
 
 void write_stats(int what)
 {
-	StatsEntry stats = STATS_ENTRY__INIT;
-	DumpStatsEntry ds_entry = DUMP_STATS_ENTRY__INIT;
 	RestoreStatsEntry rs_entry = RESTORE_STATS_ENTRY__INIT;
-	char *name;
+	DumpStatsEntry ds_entry = DUMP_STATS_ENTRY__INIT;
+	StatsEntry stats = STATS_ENTRY__INIT;
 	struct cr_img *img;
+	char *name;
 
 	pr_info("Writing stats\n");
 	if (what == DUMP_STATS) {
 		stats.dump = &ds_entry;
-
-		encode_time(TIME_FREEZING, &ds_entry.freezing_time);
-		encode_time(TIME_FROZEN, &ds_entry.frozen_time);
-		encode_time(TIME_MEMDUMP, &ds_entry.memdump_time);
-		encode_time(TIME_MEMWRITE, &ds_entry.memwrite_time);
-		ds_entry.has_irmap_resolve = true;
-		encode_time(TIME_IRMAP_RESOLVE, &ds_entry.irmap_resolve);
-
-		ds_entry.pages_scanned = dstats->counts[CNT_PAGES_SCANNED];
-		ds_entry.pages_skipped_parent = dstats->counts[CNT_PAGES_SKIPPED_PARENT];
-		ds_entry.pages_written = dstats->counts[CNT_PAGES_WRITTEN];
-		ds_entry.pages_lazy = dstats->counts[CNT_PAGES_LAZY];
-		ds_entry.page_pipes = dstats->counts[CNT_PAGE_PIPES];
-		ds_entry.has_page_pipes = true;
-		ds_entry.page_pipe_bufs = dstats->counts[CNT_PAGE_PIPE_BUFS];
-		ds_entry.has_page_pipe_bufs = true;
-
 		name = "dump";
+
+		encode_time(TIME_FREEZING,	&ds_entry.freezing_time);
+		encode_time(TIME_FROZEN,	&ds_entry.frozen_time);
+		encode_time(TIME_MEMDUMP,	&ds_entry.memdump_time);
+		encode_time(TIME_MEMWRITE,	&ds_entry.memwrite_time);
+
+		ds_entry.has_irmap_resolve	= true;
+		encode_time(TIME_IRMAP_RESOLVE,	&ds_entry.irmap_resolve);
+
+		ds_entry.pages_scanned		= dstats->counts[CNT_PAGES_SCANNED];
+		ds_entry.pages_skipped_parent	= dstats->counts[CNT_PAGES_SKIPPED_PARENT];
+		ds_entry.pages_written		= dstats->counts[CNT_PAGES_WRITTEN];
+		ds_entry.pages_lazy		= dstats->counts[CNT_PAGES_LAZY];
+
+		ds_entry.has_page_pipes		= true;
+		ds_entry.page_pipes		= dstats->counts[CNT_PAGE_PIPES];
+		ds_entry.has_page_pipe_bufs	= true;
+		ds_entry.page_pipe_bufs		= dstats->counts[CNT_PAGE_PIPE_BUFS];
 	} else if (what == RESTORE_STATS) {
 		stats.restore = &rs_entry;
-
-		rs_entry.pages_compared = atomic_read(&rstats->counts[CNT_PAGES_COMPARED]);
-		rs_entry.pages_skipped_cow = atomic_read(&rstats->counts[CNT_PAGES_SKIPPED_COW]);
-		rs_entry.has_pages_restored = true;
-		rs_entry.pages_restored = atomic_read(&rstats->counts[CNT_PAGES_RESTORED]);
-
-		encode_time(TIME_FORK, &rs_entry.forking_time);
-		encode_time(TIME_RESTORE, &rs_entry.restore_time);
-
 		name = "restore";
+
+		rs_entry.pages_compared		= atomic_read(&rstats->counts[CNT_PAGES_COMPARED]);
+		rs_entry.pages_skipped_cow	= atomic_read(&rstats->counts[CNT_PAGES_SKIPPED_COW]);
+		rs_entry.has_pages_restored	= true;
+		rs_entry.pages_restored		= atomic_read(&rstats->counts[CNT_PAGES_RESTORED]);
+
+		encode_time(TIME_FORK,		&rs_entry.forking_time);
+		encode_time(TIME_RESTORE,	&rs_entry.restore_time);
+
 	} else
 		return;
 
