@@ -127,6 +127,8 @@ ifeq ($(GMON),1)
 export GMON GMONLDOPT
 endif
 
+CFLAGS			+= -iquote flog/include/ -iquote flog/include/uapi
+
 AFLAGS			+= -D__ASSEMBLY__
 CFLAGS			+= $(USERCFLAGS) $(WARNINGS) $(DEFINES) -iquote include/
 HOSTCFLAGS		+= $(WARNINGS) $(DEFINES) -iquote include/
