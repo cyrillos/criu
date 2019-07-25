@@ -219,6 +219,17 @@ $(SOCCR_A): |soccr/built-in.o
 criu-deps	+= $(SOCCR_A)
 
 #
+# Fast logging library
+FLOG_A := flog/libflog.a
+flog/Makefile: ;
+flog/%: $(CONFIG_HEADER) .FORCE
+	$(Q) $(MAKE) $(build)=flog $@
+flog/built-in.o: $(CONFIG_HEADER) .FORCE
+	$(Q) $(MAKE) $(build)=flog all
+$(FLOG_A): | flog/built-in.o
+criu-deps	+= $(FLOG_A)
+
+#
 # CRIU building done in own directory
 # with slightly different rules so we
 # can't use nmk engine directly (we
