@@ -13,6 +13,25 @@
 
 #include "flog.h"
 
+int flog_init(flog_ctx_t *ctx)
+{
+	memset(ctx, 0, sizeof(*ctx));
+
+	/* 20M should be enough for now */
+	ctx->size = ctx->left = 20 << 20;
+	ctx->pos = ctx->buf = malloc(ctx->size);
+	if (!ctx->buf)
+		return -ENOMEM;
+
+	return 0;
+}
+
+void flog_fini(flog_ctx_t *ctx)
+{
+	free(ctx->buf);
+	memset(ctx, 0, sizeof(*ctx));
+}
+
 int flog_decode_msg(flog_msg_t *m, int fdout)
 {
 	ffi_type *args[34] = {
@@ -52,9 +71,9 @@ int flog_decode_msg(flog_msg_t *m, int fdout)
 	return ret;
 }
 
-int flog_encode_msg(char *mbuf, size_t mbuf_size, unsigned int nargs, unsigned int mask, const char *format, ...)
+int flog_encode_msg(flog_ctx_t *ctx, unsigned int nargs, unsigned int mask, const char *format, ...)
 {
-	flog_msg_t *m = (void *)mbuf;
+	flog_msg_t *m = (void *)ctx->pos;
 	char *str_start, *p;
 	va_list argptr;
 	size_t i;
@@ -63,11 +82,11 @@ int flog_encode_msg(char *mbuf, size_t mbuf_size, unsigned int nargs, unsigned i
 	m->mask = mask;
 
 	str_start = (void *)m->args + sizeof(m->args[0]) * nargs;
-	p = memccpy(str_start, format, 0, mbuf_size - (str_start - mbuf));
+	p = memccpy(str_start, format, 0, ctx->left - (str_start - ctx->pos));
 	if (!p)
 		return -ENOMEM;
 
-	m->fmt = str_start - mbuf;
+	m->fmt = str_start - ctx->pos;
 	str_start = p;
 
 	va_start(argptr, format);
@@ -79,15 +98,15 @@ int flog_encode_msg(char *mbuf, size_t mbuf_size, unsigned int nargs, unsigned i
 		 * a copy (FIXME implement rodata refs).
 		 */
 		if (mask & (1u << i)) {
-			p = memccpy(str_start, (void *)m->args[i], 0, mbuf_size - (str_start - mbuf));
+			p = memccpy(str_start, (void *)m->args[i], 0, ctx->left - (str_start - ctx->pos));
 			if (!p)
 				return -ENOMEM;
-			m->args[i] = str_start - mbuf;
+			m->args[i] = str_start - ctx->pos;
 			str_start = p;
 		}
 	}
 	va_end(argptr);
-	m->size = str_start - mbuf;
+	m->size = str_start - ctx->pos;
 
 	/*
 	 * A magic is required to know where we stop writing into a log file,
@@ -99,6 +118,10 @@ int flog_encode_msg(char *mbuf, size_t mbuf_size, unsigned int nargs, unsigned i
 	m->version = FLOG_VERSION;
 
 	m->size = round_up(m->size, 8);
+
+	/* Advance position and left bytes in context memory */
+	ctx->left -= m->size;
+	ctx->pos += m->size;
 
 	return 0;
 }

@@ -139,13 +139,25 @@ typedef struct {
 	long		args[0];
 } flog_msg_t;
 
-extern int flog_encode_msg(char *mbuf, size_t mbuf_size,
+typedef struct {
+	char		*buf;
+	char		*pos;
+	size_t		size;
+	size_t		left;
+} flog_ctx_t;
+
+extern int flog_init(flog_ctx_t *ctx);
+extern void flog_fini(flog_ctx_t *ctx);
+
+extern int flog_encode_msg(flog_ctx_t *ctx,
 			   unsigned int nargs, unsigned int mask,
 			   const char *format, ...);
 extern int flog_decode_msg(flog_msg_t *m, int fdout);
 
-#define flog_encode(where, fmt, ...)							\
-	flog_encode_msg(where, FLOG_PP_NARG(__VA_ARGS__),				\
-			FLOG_GENMASK(flog_genbit, ##__VA_ARGS__), fmt, ##__VA_ARGS__)
+#define flog_encode(ctx, fmt, ...)						\
+	flog_encode_msg(ctx,							\
+			FLOG_PP_NARG(__VA_ARGS__),				\
+			FLOG_GENMASK(flog_genbit, ##__VA_ARGS__),		\
+			fmt, ##__VA_ARGS__)
 
 #endif /* __UAPI_FLOG_H__ */
