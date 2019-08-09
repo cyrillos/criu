@@ -37,35 +37,53 @@ extern void print_on_level(unsigned int loglevel, const char *format, ...)
 
 void flush_early_log_buffer(int fd);
 
+#ifdef CR_NOGLIBC
+#undef flog_encode
+#define flog_encode(ctx, fmt, ...)
+#endif
+
 #define print_once(loglevel, fmt, ...)					\
 	do {								\
 		static bool __printed;					\
 		if (!__printed) {					\
+			flog_encode(&flog_ctx, fmt, ##__VA_ARGS__);	\
 			print_on_level(loglevel, fmt, ##__VA_ARGS__);	\
 			__printed = 1;					\
 		}							\
 	} while (0)
 
 #define pr_msg(fmt, ...)						\
+	do {								\
+	flog_encode(&flog_ctx, fmt, ##__VA_ARGS__);			\
 	print_on_level(LOG_MSG,						\
-		       fmt, ##__VA_ARGS__)
+		       fmt, ##__VA_ARGS__);				\
+	} while (0)
 
 #define pr_info(fmt, ...)						\
+	do {								\
+	flog_encode(&flog_ctx, fmt, ##__VA_ARGS__);			\
 	print_on_level(LOG_INFO,					\
-		       LOG_PREFIX fmt, ##__VA_ARGS__)
+		       LOG_PREFIX fmt, ##__VA_ARGS__);			\
+	} while (0)
 
 #define pr_err(fmt, ...)						\
+	do {								\
+	flog_encode(&flog_ctx, fmt, ##__VA_ARGS__);			\
 	print_on_level(LOG_ERROR,					\
 		       "Error (%s:%d): " LOG_PREFIX fmt,		\
-		       __FILE__, __LINE__, ##__VA_ARGS__)
+		       __FILE__, __LINE__, ##__VA_ARGS__);		\
+	} while (0)
 
 #define pr_err_once(fmt, ...)						\
 	print_once(LOG_ERROR, fmt, ##__VA_ARGS__)
 
 #define pr_warn(fmt, ...)						\
+	do {								\
+	flog_encode(&flog_ctx, fmt, ##__VA_ARGS__);			\
 	print_on_level(LOG_WARN,					\
 		       "Warn  (%s:%d): " LOG_PREFIX fmt,		\
-		       __FILE__, __LINE__, ##__VA_ARGS__)
+		       __FILE__, __LINE__, ##__VA_ARGS__);		\
+	} while (0)
 
 #define pr_warn_once(fmt, ...)						\
        print_once(LOG_WARN,						\
@@ -73,8 +91,11 @@ void flush_early_log_buffer(int fd);
 			__FILE__, __LINE__, ##__VA_ARGS__)
 
 #define pr_debug(fmt, ...)						\
+	do {								\
+	flog_encode(&flog_ctx, fmt, ##__VA_ARGS__);			\
 	print_on_level(LOG_DEBUG,					\
-		       LOG_PREFIX fmt, ##__VA_ARGS__)
+		       LOG_PREFIX fmt, ##__VA_ARGS__);			\
+	} while (0)
 
 #ifndef CR_NOGLIBC
 
