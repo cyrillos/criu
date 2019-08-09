@@ -48,6 +48,8 @@
 #include "sysctl.h"
 #include "img-remote.h"
 
+flog_ctx_t flog_ctx;
+
 int main(int argc, char *argv[], char *envp[])
 {
 	int ret = -1;
@@ -55,6 +57,9 @@ int main(int argc, char *argv[], char *envp[])
 	bool has_exec_cmd = false;
 	bool has_sub_command;
 	int state = PARSING_GLOBAL_CONF;
+
+	/* FIXME: where to put flog_fini? */
+	flog_init(&flog_ctx);
 
 	BUILD_BUG_ON(CTL_32 != SYSCTL_TYPE__CTL_32);
 	BUILD_BUG_ON(__CTL_STR != SYSCTL_TYPE__CTL_STR);
@@ -72,7 +77,6 @@ int main(int argc, char *argv[], char *envp[])
 		goto usage;
 
 	init_opts();
-
 
 	ret = parse_options(argc, argv, &usage_error, &has_exec_cmd, state);
 

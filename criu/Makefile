@@ -70,6 +70,7 @@ PROGRAM-BUILTINS	+= images/built-in.o
 PROGRAM-BUILTINS	+= $(obj)/built-in.o
 PROGRAM-BUILTINS	+= $(ARCH-LIB)
 PROGRAM-BUILTINS	+= soccr/libsoccr.a
+PROGRAM-BUILTINS	+= flog/libflog.a
 PROGRAM-BUILTINS	+= $(COMPEL_LIBS)
 
 $(obj)/built-in.o: pie

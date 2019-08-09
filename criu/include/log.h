@@ -9,6 +9,11 @@
 #include <errno.h>
 #include <stdarg.h>
 
+#include "flog.h"
+
+/* FIXME: Should be in options? */
+extern flog_ctx_t flog_ctx;
+
 extern void vprint_on_level(unsigned int loglevel, const char *format,
 		va_list params);
 
