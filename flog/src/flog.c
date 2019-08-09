@@ -71,6 +71,18 @@ int flog_decode_msg(flog_msg_t *m, int fdout)
 	return ret;
 }
 
+void flog_decode_all(flog_ctx_t *ctx, int fdout)
+{
+	flog_msg_t *m;
+	char *pos;
+
+	for (pos = ctx->buf; pos < ctx->pos; ) {
+		m = (void *)pos;
+		flog_decode_msg(m ,fdout);
+		pos += m->size;
+	}
+}
+
 int flog_encode_msg(flog_ctx_t *ctx, unsigned int nargs, unsigned int mask, const char *format, ...)
 {
 	flog_msg_t *m = (void *)ctx->pos;

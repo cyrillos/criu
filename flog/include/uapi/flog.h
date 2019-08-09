@@ -149,6 +149,8 @@ typedef struct {
 extern int flog_init(flog_ctx_t *ctx);
 extern void flog_fini(flog_ctx_t *ctx);
 
+extern void flog_decode_all(flog_ctx_t *ctx, int fdout);
+
 extern int flog_encode_msg(flog_ctx_t *ctx,
 			   unsigned int nargs, unsigned int mask,
 			   const char *format, ...);

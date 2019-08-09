@@ -227,8 +227,12 @@ int main(int argc, char *argv[], char *envp[])
 	if (!strcmp(argv[optind], "lazy-pages"))
 		return cr_lazy_pages(opts.daemon_mode) != 0;
 
-	if (!strcmp(argv[optind], "check"))
-		return cr_check() != 0;
+	if (!strcmp(argv[optind], "check")) {
+		ret = cr_check();
+		printf("--- FLOG ---\n");
+		flog_decode_all(&flog_ctx, STDOUT_FILENO);
+		return ret != 0;
+	}
 
 	if (!strcmp(argv[optind], "page-server"))
 		return cr_page_server(opts.daemon_mode, false, -1) != 0;
